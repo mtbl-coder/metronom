@@ -1,30 +1,39 @@
 import {
   NAMINGS,
+  ACCIDENTALS,
   TRANSPOSITIONS,
+  TEMPOS,
   getTransposition,
   analyzeFrequency,
   noteName,
   noteLabel,
   midiToFreq,
-  transpositionLabel,
   transpositionKey,
   tempoName,
+  tempoBpm,
+  clampBpm,
+  BPM_MIN,
+  BPM_MAX,
 } from './notes.js';
 import { Tuner, ToneGenerator, RESPONSE } from './tuner.js';
 import { Metronome, SOUNDS, ACCENT } from './metronome.js';
 
 const $ = (id) => document.getElementById(id);
+const svgNS = 'http://www.w3.org/2000/svg';
 
-// ---------------------------------------------------------------- ustawienia
+// ================================================================ ustawienia
+const SETTINGS_VERSION = 2;
 const DEFAULTS = {
+  v: SETTINGS_VERSION,
   tab: 'tuner',
-  naming: 'en',
-  accidental: 'flat',
+  naming: 'pl',
+  accidental: 'auto',
   transposition: 'C',
   a4: 440,
   tolerance: 5,
   sensitivity: 50,
   response: 'normal',
+  showHz: false,
   forkMidi: 69,
   bpm: 84,
   beats: 4,
@@ -38,15 +47,32 @@ const DEFAULTS = {
   trainer: { enabled: false, step: 2, everyBars: 4, target: 140 },
   timer: { enabled: false, minutes: 5 },
 };
+const A4_MIN = 415;
+const A4_MAX = 466;
+const TOL_MAX = 15;
+// główne stroje w segmencie; pozostałe w liście „wszystkie stroje”
+const MAIN_TRANSPOSITIONS = ['C', 'Bb', 'Eb', 'F'];
 
 const STORE_KEY = 'stroik-metronom.v1';
 let S = { ...DEFAULTS };
 try {
   const saved = JSON.parse(localStorage.getItem(STORE_KEY) || '{}');
   S = { ...DEFAULTS, ...saved };
+  if (!saved.v) {
+    // wersja 1 miała domyślnie notację międzynarodową – przejście na polską (projekt)
+    S.naming = DEFAULTS.naming;
+    S.accidental = DEFAULTS.accidental;
+    S.v = SETTINGS_VERSION;
+  }
 } catch {
   /* brak dostępu do pamięci – używamy domyślnych */
 }
+if (!NAMINGS[S.naming]) S.naming = DEFAULTS.naming;
+if (!ACCIDENTALS[S.accidental]) S.accidental = DEFAULTS.accidental;
+S.a4 = Math.max(A4_MIN, Math.min(A4_MAX, Number(S.a4) || 440));
+S.tolerance = Math.max(1, Math.min(TOL_MAX, S.tolerance));
+S.bpm = clampBpm(S.bpm);
+
 let saveTimer = null;
 function save() {
   clearTimeout(saveTimer);
@@ -61,7 +87,7 @@ function save() {
 
 const nameOpts = () => ({ naming: S.naming, accidental: S.accidental });
 
-// ---------------------------------------------------------------- audio
+// ================================================================ audio
 let audioCtx = null;
 function getContext() {
   if (!audioCtx) {
@@ -93,113 +119,132 @@ async function updateWakeLock() {
   }
 }
 
+// ---------------------------------------------------------------- pomocnicze UI
+function setPressed(container, predicate) {
+  container.querySelectorAll('button').forEach((b) => b.setAttribute('aria-pressed', String(predicate(b))));
+}
+
+function makeSegment(container, items, onPick) {
+  container.textContent = '';
+  for (const { value, label, aria } of items) {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.dataset.value = value;
+    b.textContent = label;
+    if (aria) b.setAttribute('aria-label', aria);
+    b.addEventListener('click', () => onPick(value));
+    container.appendChild(b);
+  }
+}
+
+function fillTempoSelect(sel) {
+  sel.textContent = '';
+  for (const t of TEMPOS) {
+    const o = document.createElement('option');
+    o.value = t.name;
+    o.textContent = `${t.name}  ·  ${t.min}–${t.max}`;
+    sel.appendChild(o);
+  }
+}
+
 // ---------------------------------------------------------------- zakładki
 function showTab(tab) {
   S.tab = tab;
   save();
   document.querySelectorAll('.tab').forEach((b) => {
-    const on = b.dataset.tab === tab;
-    b.classList.toggle('active', on);
-    b.setAttribute('aria-selected', on);
+    if (b.dataset.tab === tab) b.setAttribute('aria-current', 'page');
+    else b.removeAttribute('aria-current');
   });
   document.querySelectorAll('.screen').forEach((s) => s.classList.toggle('active', s.id === tab));
-  if (tab === 'tuner') resizeHistory();
 }
 document.querySelectorAll('.tab').forEach((b) => b.addEventListener('click', () => showTab(b.dataset.tab)));
 
 // ================================================================ STROIK
-const GAUGE = { cx: 160, cy: 172, r: 140, maxAngle: 62 };
-const svgNS = 'http://www.w3.org/2000/svg';
-const angleFor = (c) => (Math.max(-50, Math.min(50, c)) / 50) * GAUGE.maxAngle;
+// −50…+50 centów → −75°…+75° (1 cent = 1,5°)
+const GAUGE = { cx: 160, cy: 172, r: 150, degPerCent: 1.5, tickOuter: 142 };
+const angleFor = (c) => Math.max(-50, Math.min(50, c)) * GAUGE.degPerCent;
 function polar(r, deg) {
   const a = (deg * Math.PI) / 180;
   return [GAUGE.cx + r * Math.sin(a), GAUGE.cy - r * Math.cos(a)];
 }
+const f1 = (n) => n.toFixed(1);
 
 function buildGauge() {
-  const ticks = $('gaugeTicks');
-  const zone = $('gaugeZone');
-  ticks.textContent = '';
-  zone.textContent = '';
-  const tol = S.tolerance;
-
-  const [x1, y1] = polar(GAUGE.r + 4, -angleFor(tol));
-  const [x2, y2] = polar(GAUGE.r + 4, angleFor(tol));
-  const wedge = document.createElementNS(svgNS, 'path');
-  wedge.setAttribute('d', `M${GAUGE.cx} ${GAUGE.cy} L${x1} ${y1} A${GAUGE.r + 4} ${GAUGE.r + 4} 0 0 1 ${x2} ${y2} Z`);
-  wedge.setAttribute('class', 'zone-fill');
-  zone.appendChild(wedge);
-
-  for (let c = -50; c <= 50; c += 1) {
-    const major = c % 10 === 0;
-    const mid = c % 5 === 0;
-    if (!major && !mid && c % 2 !== 0) continue;
-    const a = angleFor(c);
-    const len = major ? 22 : mid ? 14 : 9;
-    const [ax, ay] = polar(GAUGE.r, a);
-    const [bx, by] = polar(GAUGE.r - len, a);
+  const g = $('gaugeTicks');
+  g.textContent = '';
+  for (let c = -50; c <= 50; c++) {
+    const kind = c === 0 ? 'zero' : c % 10 === 0 ? 'major' : c % 5 === 0 ? 'mid' : 'minor';
+    const inner = { zero: 118, major: 120, mid: 127, minor: 134 }[kind];
+    const [x1, y1] = polar(inner, angleFor(c));
+    const [x2, y2] = polar(GAUGE.tickOuter, angleFor(c));
     const l = document.createElementNS(svgNS, 'line');
-    l.setAttribute('x1', ax);
-    l.setAttribute('y1', ay);
-    l.setAttribute('x2', bx);
-    l.setAttribute('y2', by);
-    l.setAttribute('stroke-width', major ? 3 : 1.4);
-    l.setAttribute('class', 'tick' + (Math.abs(c) <= tol ? ' zone' : ''));
-    ticks.appendChild(l);
-    if (major) {
-      const [tx, ty] = polar(GAUGE.r + 13, a);
+    l.setAttribute('x1', f1(x1));
+    l.setAttribute('y1', f1(y1));
+    l.setAttribute('x2', f1(x2));
+    l.setAttribute('y2', f1(y2));
+    l.setAttribute('class', `tk ${kind}`);
+    g.appendChild(l);
+    if (c % 10 === 0) {
+      const [tx, ty] = polar(106, angleFor(c));
       const t = document.createElementNS(svgNS, 'text');
-      t.setAttribute('x', tx);
-      t.setAttribute('y', ty + 4);
-      t.setAttribute('transform', `rotate(${a} ${tx} ${ty})`);
-      t.setAttribute('class', 'lbl' + (Math.abs(c) <= tol ? ' zone' : ''));
-      t.textContent = c;
-      ticks.appendChild(t);
+      t.setAttribute('x', f1(tx));
+      t.setAttribute('y', f1(ty + 3.5));
+      t.setAttribute('class', 'tk-lbl');
+      t.textContent = c > 0 ? `+${c}` : c < 0 ? `−${-c}` : '0';
+      g.appendChild(t);
     }
   }
+  renderTolerance();
 }
 
-const noteHTML = (midi, withOctave = true) => {
-  const n = noteName(midi, nameOpts());
-  return withOctave ? `${n.name}<sub>${n.octave}</sub>` : n.name;
-};
+function renderTolerance() {
+  const [x1, y1] = polar(GAUGE.r, -angleFor(S.tolerance));
+  const [x2, y2] = polar(GAUGE.r, angleFor(S.tolerance));
+  $('tolArc').setAttribute('d', `M ${f1(x1)} ${f1(y1)} A ${GAUGE.r} ${GAUGE.r} 0 0 1 ${f1(x2)} ${f1(y2)}`);
+  const h = S.tolerance * HIST_SCALE;
+  $('histTol').setAttribute('y', f1(32 - h));
+  $('histTol').setAttribute('height', f1(2 * h));
+}
 
-const tunerState = { midi: null, cents: 0, lastSeen: 0, history: [] };
-const HISTORY_LEN = 160;
+const tunerState = { midi: null, cents: 0, lastSeen: 0, history: [], live: false };
+const HISTORY_LEN = 110; // ~5 s przy ~45 ms na punkt
+const HIST_SCALE = 0.56; // centy → jednostki wykresu (±50¢ = ±28)
 
-function fmtCents(c) {
+function fmtCents(c, space = '') {
   const v = Math.round(c);
-  return (v > 0 ? '+' : v < 0 ? '−' : '±') + Math.abs(v) + '¢';
+  return `${v >= 0 ? '+' : '−'}${Math.abs(v)}${space}¢`;
 }
 function fmtHz(f) {
   return f.toFixed(f < 100 ? 2 : 1);
 }
 
+function setNote(nameEl, octEl, midi) {
+  const n = noteName(midi, nameOpts());
+  nameEl.textContent = n.name;
+  nameEl.className = 'note' + (n.name.length >= 4 ? ' len4' : n.name.length === 3 ? ' len3' : '');
+  octEl.textContent = n.octave;
+}
+
 function renderTunerLabels() {
   const t = getTransposition(S.transposition);
-  $('a4Label').textContent = `A4 = ${+S.a4.toFixed(1)} Hz`;
-  $('a4Label').classList.toggle('warn', S.a4 !== 440);
-  $('transpLabel').textContent = t.semis ? transpositionLabel(t, nameOpts()) : '';
-  $('instLabel').textContent = `${transpositionKey(t, nameOpts())} instr.`;
-  $('notePanel').classList.toggle('single', t.semis === 0);
+  const key = transpositionKey(t, nameOpts());
+  $('tunerSub').textContent = `A4 = ${+S.a4.toFixed(1)} Hz · strój ${key}`;
+  $('instrLabel').textContent = key;
+  $('noteBand').classList.toggle('single', t.semis === 0);
   if (tunerState.midi !== null) renderNote(tunerState.midi);
   renderFork();
 }
 
 function renderNote(midi) {
   const t = getTransposition(S.transposition);
-  $('concertNote').innerHTML = noteHTML(midi);
-  $('instNote').innerHTML = noteHTML(midi + t.semis);
-  const target = midiToFreq(midi, S.a4);
-  $('targetLabel').textContent = `${noteLabel(midi, nameOpts())}: ${fmtHz(target)} Hz`;
-  $('lowName').textContent = noteLabel(midi - 1, nameOpts());
-  $('highName').textContent = noteLabel(midi + 1, nameOpts());
+  setNote($('concertNote'), $('concertOct'), midi);
+  setNote($('writtenNote'), $('writtenOct'), midi + t.semis);
 }
 
 function onTunerResult(r) {
   const now = performance.now();
-  const panel = $('notePanel');
-  const wrap = $('gauge').parentElement;
+  const card = $('gauge').parentElement;
+  const band = $('noteBand');
 
   if (r.freq > 0) {
     const a = analyzeFrequency(r.freq, S.a4);
@@ -211,33 +256,34 @@ function onTunerResult(r) {
       tunerState.cents += (a.cents - tunerState.cents) * tuner.response.smoothing; // wygładzanie wskazówki
     }
     tunerState.lastSeen = now;
+    tunerState.live = true;
     const c = tunerState.cents;
-    const abs = Math.abs(c);
-    const ok = abs <= S.tolerance;
+    const inTune = Math.abs(c) <= S.tolerance;
 
-    $('needle').style.transform = `rotate(${angleFor(c)}deg)`;
-    $('needle').classList.remove('idle');
-    $('centsBox').textContent = fmtCents(c);
-    $('freqNow').textContent = `${fmtHz(r.freq)} Hz`;
-    const diff = r.freq - midiToFreq(a.midi, S.a4);
-    $('freqDiff').textContent = `${diff >= 0 ? '+' : '−'}${Math.abs(diff).toFixed(2)} Hz do nominału`;
-    panel.classList.toggle('ok', ok);
-    panel.classList.toggle('near', !ok && abs <= S.tolerance * 3);
-    wrap.classList.toggle('in-tune', ok);
-    $('statusText').textContent = '';
+    card.dataset.state = inTune ? 'in' : c < 0 ? 'flat' : 'sharp';
+    $('needle').style.transform = `rotate(${angleFor(c).toFixed(1)}deg)`;
+    $('centsText').textContent = fmtCents(c);
+    $('gauge').setAttribute('aria-label', `Odchyłka ${fmtCents(c)}`);
+    band.classList.toggle('in-tune', inTune);
+    band.classList.remove('idle');
+    if (S.showHz) {
+      const diff = r.freq - midiToFreq(a.midi, S.a4);
+      $('hzText').textContent = `${fmtHz(r.freq)} Hz · ${diff >= 0 ? '+' : '−'}${Math.abs(diff).toFixed(2)}`;
+    }
     pushHistory(c);
   } else {
     pushHistory(null);
-    $('statusText').textContent = r.rms >= tuner.minRms && !r.pending ? 'SZUM' : '';
-    if (now - tunerState.lastSeen > 1200) {
-      $('needle').classList.add('idle');
-      panel.classList.remove('ok', 'near');
-      wrap.classList.remove('in-tune');
-      $('centsBox').textContent = '—';
-      $('freqNow').textContent = '— Hz';
-      $('freqDiff').textContent = '';
+    if (now - tunerState.lastSeen > 1200 && tunerState.live) {
+      tunerState.live = false;
+      delete card.dataset.state;
+      $('needle').style.transform = 'rotate(0deg)';
+      $('centsText').textContent = '—';
+      $('hzText').textContent = '';
+      band.classList.remove('in-tune');
+      band.classList.add('idle');
     }
   }
+  renderPill();
   drawHistory();
 }
 
@@ -255,86 +301,35 @@ function pushHistory(c) {
   if (h.length > HISTORY_LEN) h.shift();
 }
 
-const hist = $('history');
-const hctx = hist.getContext('2d');
-function resizeHistory() {
-  const dpr = window.devicePixelRatio || 1;
-  const w = hist.clientWidth;
-  const h = hist.clientHeight;
-  if (!w || !h) return;
-  hist.width = Math.round(w * dpr);
-  hist.height = Math.round(h * dpr);
-  hctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-  drawHistory();
-}
-window.addEventListener('resize', resizeHistory);
-
 function drawHistory() {
-  const w = hist.clientWidth;
-  const h = hist.clientHeight;
-  if (!w || !h) return;
-  const padL = 28;
-  const y = (c) => h / 2 - (Math.max(-50, Math.min(50, c)) / 50) * (h / 2 - 6);
-  hctx.clearRect(0, 0, w, h);
-
-  // pas tolerancji
-  hctx.fillStyle = 'rgba(110,150,220,0.25)';
-  hctx.fillRect(padL, y(S.tolerance), w - padL, y(-S.tolerance) - y(S.tolerance));
-
-  // siatka
-  hctx.strokeStyle = 'rgba(110,150,220,0.25)';
-  hctx.lineWidth = 1;
-  hctx.font = '10px system-ui, sans-serif';
-  hctx.textAlign = 'right';
-  hctx.textBaseline = 'middle';
-  for (let c = -40; c <= 40; c += 10) {
-    hctx.beginPath();
-    hctx.moveTo(padL, y(c));
-    hctx.lineTo(w, y(c));
-    hctx.stroke();
-    hctx.fillStyle = Math.abs(c) <= S.tolerance ? '#8ee000' : '#6f9fe0';
-    hctx.fillText(String(c), padL - 4, y(c));
-  }
-  const step = (w - padL) / HISTORY_LEN;
-  for (let x = w; x > padL; x -= step * 10) {
-    hctx.beginPath();
-    hctx.moveTo(x, 0);
-    hctx.lineTo(x, h);
-    hctx.stroke();
-  }
-
-  // przebieg
-  const data = tunerState.history;
-  const off = HISTORY_LEN - data.length;
-  hctx.lineWidth = 2.5;
-  hctx.lineJoin = 'round';
-  let prev = null;
-  data.forEach((c, i) => {
-    const x = padL + (off + i) * step;
+  const h = tunerState.history;
+  const off = HISTORY_LEN - h.length;
+  const step = 340 / (HISTORY_LEN - 1);
+  let d = '';
+  let pen = false;
+  h.forEach((c, i) => {
     if (c === null) {
-      prev = null;
+      pen = false;
       return;
     }
-    if (prev) {
-      hctx.strokeStyle = Math.abs(c) <= S.tolerance ? '#8ee000' : Math.abs(c) <= S.tolerance * 3 ? '#ffd23f' : '#ff5a5a';
-      hctx.beginPath();
-      hctx.moveTo(prev[0], prev[1]);
-      hctx.lineTo(x, y(c));
-      hctx.stroke();
-    }
-    prev = [x, y(c)];
+    const x = f1((off + i) * step);
+    const y = f1(32 - Math.max(-50, Math.min(50, c)) * HIST_SCALE);
+    d += `${pen ? 'L' : 'M'}${x} ${y} `;
+    pen = true;
   });
+  $('histLine').setAttribute('d', d.trim());
 }
 
 tuner.onResult = onTunerResult;
 tuner.sensitivity = S.sensitivity / 100;
 function applyResponse() {
   tuner.setResponse(S.response);
-  $('needle').style.transition = `transform ${tuner.response.transition}s linear, opacity .3s`;
+  // czas animacji zależy od trybu reakcji (szybka wskazówka = krótsza animacja)
+  $('needle').style.transition = `transform ${Math.round(tuner.response.transition * 1000)}ms ease-out, opacity .3s`;
 }
 applyResponse();
-let tunerWanted = false;
 
+let tunerWanted = false;
 async function startTuner() {
   tunerWanted = true;
   try {
@@ -344,7 +339,7 @@ async function startTuner() {
     tunerWanted = false;
     $('micStart').hidden = false;
     $('micStart').querySelector('span').textContent =
-      e && e.name === 'NotAllowedError' ? 'Brak zgody na mikrofon – dotknij, aby spróbować' : 'Nie udało się włączyć mikrofonu';
+      e && e.name === 'NotAllowedError' ? 'Brak zgody – spróbuj ponownie' : 'Mikrofon niedostępny';
   }
   updateWakeLock();
 }
@@ -359,25 +354,30 @@ document.addEventListener('visibilitychange', () => {
   updateWakeLock();
 });
 
-// ---------------------------------------------------------------- kamerton
+// ---------------------------------------------------------------- ton wzorcowy (kamerton)
 function renderFork() {
   const t = getTransposition(S.transposition);
   const f = midiToFreq(S.forkMidi, S.a4);
-  $('forkNote').innerHTML = t.semis
-    ? `${noteHTML(S.forkMidi)} <span class="arrow">»</span> ${noteHTML(S.forkMidi + t.semis)}`
-    : noteHTML(S.forkMidi);
+  const part = (m) => {
+    const n = noteName(m, nameOpts());
+    return `${n.name}<sub>${n.octave}</sub>`;
+  };
+  $('forkNote').innerHTML = t.semis ? `${part(S.forkMidi)}<span class="chev">»</span>${part(S.forkMidi + t.semis)}` : part(S.forkMidi);
   $('forkInfo').textContent = `${fmtHz(f)} Hz`;
   if (tone.playing) tone.play(f);
+}
+function setForkPlaying(on) {
+  if (on) tone.play(midiToFreq(S.forkMidi, S.a4));
+  else tone.stop();
+  $('forkPlay').setAttribute('aria-pressed', String(tone.playing));
+  $('forkPlay').setAttribute('aria-label', tone.playing ? 'Zatrzymaj ton wzorcowy' : 'Graj ton wzorcowy');
 }
 $('forkBtn').addEventListener('click', () => {
   const panel = $('forkPanel');
   panel.hidden = !panel.hidden;
-  $('forkBtn').classList.toggle('on', !panel.hidden);
-  if (panel.hidden) {
-    tone.stop();
-    $('forkPlay').classList.remove('on');
-    $('forkPlay').textContent = 'Graj';
-  } else {
+  $('forkBtn').setAttribute('aria-pressed', String(!panel.hidden));
+  if (panel.hidden) setForkPlaying(false);
+  else {
     if (tunerState.midi !== null) S.forkMidi = tunerState.midi;
     renderFork();
   }
@@ -392,133 +392,148 @@ $('forkUp').addEventListener('click', () => {
   save();
   renderFork();
 });
-$('forkPlay').addEventListener('click', () => {
-  if (tone.playing) tone.stop();
-  else tone.play(midiToFreq(S.forkMidi, S.a4));
-  $('forkPlay').classList.toggle('on', tone.playing);
-  $('forkPlay').textContent = tone.playing ? 'Stop' : 'Graj';
+$('forkPlay').addEventListener('click', () => setForkPlaying(!tone.playing));
+
+// ---------------------------------------------------------------- arkusz ustawień
+const sheet = $('sheetBackdrop');
+let sheetReturnFocus = null;
+function openSettings() {
+  renderSettings();
+  sheetReturnFocus = document.activeElement;
+  sheet.hidden = false;
+  $('sheetDone').focus();
+}
+function closeSettings() {
+  sheet.hidden = true;
+  if (sheetReturnFocus) sheetReturnFocus.focus();
+}
+$('tunerSettingsBtn').addEventListener('click', openSettings);
+$('sheetDone').addEventListener('click', closeSettings);
+$('sheetDismiss').addEventListener('click', closeSettings);
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && !sheet.hidden) closeSettings();
 });
 
-// ---------------------------------------------------------------- okno ustawień
-const dlg = $('tunerSettings');
-function fillSettings() {
-  const nr = $('namingRadios');
-  nr.textContent = '';
-  for (const [key, def] of Object.entries(NAMINGS)) {
-    const l = document.createElement('label');
-    l.className = 'radio';
-    l.innerHTML = `<input type="radio" name="naming" value="${key}"><span>${def.label}</span>`;
-    l.querySelector('input').checked = S.naming === key;
-    nr.appendChild(l);
-  }
-  dlg.querySelectorAll('input[name=accidental]').forEach((i) => (i.checked = i.value === S.accidental));
-  const sel = $('transpSel');
+function settingsChanged() {
+  save();
+  renderSettings();
+  renderTunerLabels();
+}
+
+makeSegment(
+  $('transSeg'),
+  MAIN_TRANSPOSITIONS.map((id) => ({ value: id, label: id })),
+  (id) => {
+    S.transposition = id;
+    settingsChanged();
+  },
+);
+makeSegment(
+  $('namingSeg'),
+  Object.entries(NAMINGS).map(([k, d]) => ({ value: k, label: d.label })),
+  (k) => {
+    S.naming = k;
+    settingsChanged();
+  },
+);
+makeSegment(
+  $('accSeg'),
+  Object.entries(ACCIDENTALS).map(([k, label]) => ({ value: k, label, aria: { auto: 'Znaki automatycznie', sharp: 'Krzyżyki', flat: 'Bemole' }[k] })),
+  (k) => {
+    S.accidental = k;
+    settingsChanged();
+  },
+);
+makeSegment(
+  $('respSeg'),
+  Object.entries(RESPONSE).map(([k, d]) => ({ value: k, label: d.label })),
+  (k) => {
+    S.response = k;
+    applyResponse();
+    settingsChanged();
+  },
+);
+$('transSel').addEventListener('change', (e) => {
+  S.transposition = e.target.value;
+  settingsChanged();
+});
+
+function renderSettings() {
+  const opts = nameOpts();
+  $('a4Value').textContent = `A4 = ${+S.a4.toFixed(1)} Hz`;
+  $('transSeg').querySelectorAll('button').forEach((b) => (b.textContent = transpositionKey(getTransposition(b.dataset.value), opts)));
+  setPressed($('transSeg'), (b) => b.dataset.value === S.transposition);
+  const sel = $('transSel');
   sel.textContent = '';
   for (const t of TRANSPOSITIONS) {
     const o = document.createElement('option');
     o.value = t.id;
-    o.textContent = `Transpozycja: ${transpositionLabel(t, nameOpts())}`;
+    o.textContent = `${transpositionKey(t, opts)} – ${t.desc}`;
     sel.appendChild(o);
   }
   sel.value = S.transposition;
-  $('transpDesc').textContent = getTransposition(S.transposition).desc;
-  $('a4Input').value = S.a4;
+  setPressed($('namingSeg'), (b) => b.dataset.value === S.naming);
+  setPressed($('accSeg'), (b) => b.dataset.value === S.accidental);
+  setPressed($('respSeg'), (b) => b.dataset.value === S.response);
   $('tolSlider').value = S.tolerance;
-  $('tolVal').textContent = S.tolerance;
+  $('tolVal').textContent = `±${S.tolerance} ¢`;
   $('sensSlider').value = S.sensitivity;
-  const rr = $('responseRadios');
-  rr.textContent = '';
-  for (const [key, def] of Object.entries(RESPONSE)) {
-    const l = document.createElement('label');
-    l.className = 'radio';
-    l.innerHTML = `<input type="radio" name="response" value="${key}"><span>${def.label}</span>`;
-    l.querySelector('input').checked = S.response === key;
-    rr.appendChild(l);
-  }
+  $('showHz').checked = S.showHz;
 }
-function openSettings() {
-  fillSettings();
-  dlg.showModal();
-}
-$('tunerSettingsBtn').addEventListener('click', openSettings);
-$('a4Label').addEventListener('click', openSettings);
-dlg.addEventListener('click', (e) => {
-  if (e.target === dlg) dlg.close(); // klik w tło zamyka
-});
-
-dlg.addEventListener('change', (e) => {
-  const el = e.target;
-  if (el.name === 'naming') S.naming = el.value;
-  else if (el.name === 'accidental') S.accidental = el.value;
-  else if (el.name === 'response') {
-    S.response = el.value;
-    applyResponse();
-  }
-  else if (el.id === 'transpSel') S.transposition = el.value;
-  else if (el.id === 'a4Input') setA4(parseFloat(el.value));
-  else return;
-  save();
-  if (el.name === 'naming' || el.name === 'accidental') {
-    const v = $('transpSel').value;
-    fillSettings();
-    $('transpSel').value = v;
-  }
-  $('transpDesc').textContent = getTransposition(S.transposition).desc;
-  renderTunerLabels();
-});
 
 function setA4(v) {
-  if (!Number.isFinite(v)) v = 440;
-  S.a4 = Math.round(Math.max(400, Math.min(480, v)) * 2) / 2;
-  $('a4Input').value = S.a4;
-  save();
-  renderTunerLabels();
+  S.a4 = Math.max(A4_MIN, Math.min(A4_MAX, v));
+  settingsChanged();
 }
 $('a4Down').addEventListener('click', () => setA4(Math.ceil(S.a4) - 1));
 $('a4Up').addEventListener('click', () => setA4(Math.floor(S.a4) + 1));
 $('a4Reset').addEventListener('click', () => setA4(440));
 $('tolSlider').addEventListener('input', (e) => {
   S.tolerance = +e.target.value;
-  $('tolVal').textContent = S.tolerance;
+  $('tolVal').textContent = `±${S.tolerance} ¢`;
   save();
-  buildGauge();
-  drawHistory();
+  renderTolerance();
 });
 $('sensSlider').addEventListener('input', (e) => {
   S.sensitivity = +e.target.value;
   tuner.sensitivity = S.sensitivity / 100;
-function applyResponse() {
-  tuner.setResponse(S.response);
-  $('needle').style.transition = `transform ${tuner.response.transition}s linear, opacity .3s`;
-}
-applyResponse();
+  save();
+});
+$('showHz').addEventListener('change', (e) => {
+  S.showHz = e.target.checked;
+  if (!S.showHz) $('hzText').textContent = '';
   save();
 });
 
 // ================================================================ METRONOM
 metro.bpm = S.bpm;
-metro.beatsPerBar = S.beats;
 metro.accents = S.accents.slice(0, S.beats);
 metro.setBeats(S.beats);
 metro.subdivision = S.subdivision;
 metro.sound = S.sound;
 metro.volume = S.volume / 100;
-metro.trainer = { ...S.trainer };
+metro.trainer = { ...S.trainer, target: clampBpm(S.trainer.target) };
 metro.timer = { ...S.timer };
 
+fillTempoSelect($('tempoSel'));
+fillTempoSelect($('miniTempoSel'));
+
 function setBpm(v, fromEngine = false) {
-  v = Math.round(Math.max(20, Math.min(300, v || 0)));
+  v = clampBpm(v);
   S.bpm = v;
   if (!fromEngine) metro.bpm = v;
   if (document.activeElement !== $('bpmValue')) $('bpmValue').value = v;
   $('bpmSlider').value = v;
-  $('tempoName').textContent = tempoName(v);
-  $('miniBpmVal').textContent = v;
+  const name = tempoName(v);
+  $('tempoSel').value = name;
+  $('miniTempoSel').value = name;
+  $('miniBpm').textContent = v;
+  $('miniTempoName').textContent = name;
   save();
 }
 metro.onBpmChange = (v) => setBpm(v, true);
 
-// przytrzymanie +/- przyspiesza zmianę
+// przytrzymanie przycisku powtarza zmianę
 function holdRepeat(btn, fn) {
   let t1 = null;
   let t2 = null;
@@ -532,74 +547,112 @@ function holdRepeat(btn, fn) {
     t1 = setTimeout(() => (t2 = setInterval(fn, 70)), 450);
   });
   ['pointerup', 'pointerleave', 'pointercancel'].forEach((ev) => btn.addEventListener(ev, stop));
+  btn.addEventListener('keydown', (e) => (e.key === 'Enter' || e.key === ' ') && (e.preventDefault(), fn()));
 }
 holdRepeat($('bpmDown'), () => setBpm(S.bpm - 1));
 holdRepeat($('bpmUp'), () => setBpm(S.bpm + 1));
+$('bpmDown5').addEventListener('click', () => setBpm(S.bpm - 5));
+$('bpmUp5').addEventListener('click', () => setBpm(S.bpm + 5));
+$('miniDown').addEventListener('click', () => setBpm(S.bpm - 5));
+$('miniUp').addEventListener('click', () => setBpm(S.bpm + 5));
 $('bpmSlider').addEventListener('input', (e) => setBpm(+e.target.value));
 $('bpmValue').addEventListener('change', (e) => {
   setBpm(+e.target.value);
   e.target.value = S.bpm;
 });
 $('bpmValue').addEventListener('keydown', (e) => e.key === 'Enter' && e.target.blur());
+for (const id of ['tempoSel', 'miniTempoSel']) {
+  $(id).addEventListener('change', (e) => setBpm(tempoBpm(e.target.value)));
+}
 
+// tap tempo: średnia z ostatnich ≤5 uderzeń w oknie 2,5 s
 let taps = [];
 $('tapBtn').addEventListener('pointerdown', (e) => {
   e.preventDefault();
   const now = performance.now();
-  if (taps.length && now - taps[taps.length - 1] > 2000) taps = [];
-  taps.push(now);
-  if (taps.length > 6) taps.shift();
-  if (taps.length >= 2) {
-    const intervals = taps.slice(1).map((t, i) => t - taps[i]);
-    const avg = intervals.reduce((a, b) => a + b, 0) / intervals.length;
-    setBpm(60000 / avg);
-  }
+  taps = taps.filter((t) => now - t < 2500).concat(now).slice(-5);
+  if (taps.length >= 2) setBpm(60000 / ((taps[taps.length - 1] - taps[0]) / (taps.length - 1)));
 });
 
+// ---------------------------------------------------------------- akcenty i metrum
+const ACCENT_NAME = { 0: 'wyciszone', 1: 'zwykłe', 2: 'akcent' };
+let currentBeat = -1;
 function renderBeats() {
-  $('beatsVal').textContent = metro.beatsPerBar;
-  const box = $('beatDots');
+  const box = $('beatTiles');
   box.textContent = '';
   metro.accents.forEach((lvl, i) => {
     const b = document.createElement('button');
-    b.className = `dot l${lvl}`;
-    b.setAttribute('aria-label', `Uderzenie ${i + 1}`);
+    b.type = 'button';
+    b.className = `tile a${lvl}` + (i === currentBeat ? ' now' : '');
+    b.setAttribute('aria-label', `Uderzenie ${i + 1}: ${ACCENT_NAME[lvl]}`);
+    b.innerHTML = `<span class="bar"></span><span class="tile-num">${i + 1}</span>`;
     b.addEventListener('click', () => {
-      const order = [ACCENT.ACCENT, ACCENT.BEAT, ACCENT.MUTE];
-      metro.accents[i] = order[(order.indexOf(metro.accents[i]) + 1) % order.length];
+      metro.accents[i] = (metro.accents[i] + 2) % 3; // akcent → zwykłe → wyciszone
       S.accents = metro.accents.slice();
       save();
       renderBeats();
     });
     box.appendChild(b);
   });
+  renderMiniBeats();
+  renderSig();
 }
+
+function renderMiniBeats() {
+  const box = $('miniBeats');
+  if (box.children.length !== metro.beatsPerBar) {
+    box.textContent = '';
+    for (let i = 0; i < metro.beatsPerBar; i++) box.appendChild(document.createElement('span'));
+  }
+  [...box.children].forEach((s, i) => {
+    s.className = metro.playing && i === currentBeat ? (i === 0 ? 'on first' : 'on') : '';
+  });
+}
+
+const PRESET_BEATS = [2, 3, 4, 5, 6];
 function setBeats(n) {
+  const acc = [];
+  for (let k = 0; k < n; k++) acc.push(metro.accents[k] !== undefined ? metro.accents[k] : ACCENT.BEAT);
+  acc[0] = ACCENT.ACCENT;
   metro.setBeats(n);
-  S.beats = metro.beatsPerBar;
-  S.accents = metro.accents.slice();
+  metro.accents = acc;
+  currentBeat = -1;
+  S.beats = n;
+  S.accents = acc.slice();
   save();
   renderBeats();
 }
-$('beatsDown').addEventListener('click', () => setBeats(metro.beatsPerBar - 1));
-$('beatsUp').addEventListener('click', () => setBeats(metro.beatsPerBar + 1));
+$('sigSeg').querySelectorAll('button').forEach((b) => b.addEventListener('click', () => setBeats(+b.dataset.beats)));
+const other = $('beatsOther');
+for (let n = 1; n <= 16; n++) {
+  const o = document.createElement('option');
+  o.value = n;
+  o.textContent = `${n} ${n === 1 ? 'uderzenie' : n < 5 ? 'uderzenia' : 'uderzeń'}`;
+  other.appendChild(o);
+}
+other.addEventListener('change', () => setBeats(+other.value));
+
+function renderSig() {
+  const n = metro.beatsPerBar;
+  const preset = PRESET_BEATS.includes(n);
+  setPressed($('sigSeg'), (b) => +b.dataset.beats === n);
+  other.parentElement.classList.toggle('active', !preset);
+  $('beatsOtherLabel').textContent = preset ? 'inne' : `${n}/4`;
+  other.value = n;
+}
 
 function renderSubdiv() {
-  $('subdivSeg')
-    .querySelectorAll('button')
-    .forEach((b) => {
-      b.classList.toggle('active', b.dataset.sub === S.subdivision);
-      b.setAttribute('aria-checked', b.dataset.sub === S.subdivision);
-    });
+  setPressed($('subSeg'), (b) => b.dataset.sub === S.subdivision);
 }
-$('subdivSeg').addEventListener('click', (e) => {
-  const b = e.target.closest('button');
-  if (!b) return;
-  S.subdivision = metro.subdivision = b.dataset.sub;
-  save();
-  renderSubdiv();
-});
+$('subSeg').querySelectorAll('button').forEach((b) =>
+  b.addEventListener('click', () => {
+    S.subdivision = metro.subdivision = b.dataset.sub;
+    save();
+    renderSubdiv();
+  }),
+);
 
+// ---------------------------------------------------------------- brzmienie
 const soundSel = $('soundSel');
 for (const [k, label] of Object.entries(SOUNDS)) {
   const o = document.createElement('option');
@@ -620,27 +673,43 @@ $('volSlider').addEventListener('input', (e) => {
   save();
 });
 
-// start / stop
+// ---------------------------------------------------------------- start / stop
 let elapsedTimer = null;
 function fmtTime(sec) {
   const m = Math.floor(sec / 60);
   const s = Math.floor(sec % 60);
   return `${m}:${String(s).padStart(2, '0')}`;
 }
+function renderElapsed() {
+  $('elapsedInfo').textContent = `${fmtTime(metro.elapsed())} · takt ${metro.playing ? metro.bar + 1 : 1}`;
+}
+let pendSide = 1;
+function swingPendulum(on) {
+  const arm = $('pendulum');
+  if (on) {
+    pendSide = -pendSide;
+    arm.style.transitionDuration = `${Math.round(60000 / metro.bpm)}ms`;
+    arm.style.transform = `rotate(${28 * pendSide}deg)`;
+  } else {
+    arm.style.transitionDuration = '300ms';
+    arm.style.transform = 'rotate(0deg)';
+  }
+}
 function renderPlayState() {
   const on = metro.playing;
-  $('playArea').classList.toggle('is-playing', on);
-  $('miniPlay').classList.toggle('is-playing', on);
-  clearInterval(elapsedTimer);
-  if (on) {
-    elapsedTimer = setInterval(() => {
-      $('elapsed').textContent = fmtTime(metro.elapsed());
-      $('barCount').textContent = `takt ${metro.bar + 1}`;
-    }, 200);
-  } else {
-    $('bigBeat').textContent = '';
-    document.querySelectorAll('.dot.now').forEach((d) => d.classList.remove('now'));
+  for (const id of ['playBtn', 'miniPlay']) {
+    $(id).classList.toggle('is-playing', on);
+    $(id).setAttribute('aria-label', on ? 'Zatrzymaj metronom' : 'Uruchom metronom');
   }
+  $('playText').textContent = on ? 'Stop' : 'Start';
+  clearInterval(elapsedTimer);
+  if (on) elapsedTimer = setInterval(renderElapsed, 200);
+  else {
+    currentBeat = -1;
+    swingPendulum(false);
+    renderBeats();
+  }
+  renderElapsed();
   updateWakeLock();
 }
 function toggleMetro() {
@@ -648,31 +717,31 @@ function toggleMetro() {
   renderPlayState();
 }
 metro.onStop = renderPlayState;
-$('playArea').addEventListener('click', toggleMetro);
+$('playBtn').addEventListener('click', toggleMetro);
 $('miniPlay').addEventListener('click', toggleMetro);
-$('miniBpm').addEventListener('click', () => showTab('metro'));
 
 let flashTimer = null;
 metro.onTick = (beat, slot, level) => {
   if (slot !== 0) return;
-  const dots = $('beatDots').children;
-  for (let i = 0; i < dots.length; i++) dots[i].classList.toggle('now', i === beat);
-  $('bigBeat').textContent = beat + 1;
+  currentBeat = beat;
+  [...$('beatTiles').children].forEach((t, i) => t.classList.toggle('now', i === beat));
+  renderMiniBeats();
+  swingPendulum(true);
   if (level === ACCENT.MUTE) return;
   if (S.flash) {
-    const pa = $('playArea');
-    pa.classList.remove('flash', 'flash-acc');
-    pa.classList.add(level === ACCENT.ACCENT ? 'flash-acc' : 'flash');
+    const card = $('tempoCard');
+    card.classList.remove('flash', 'flash-acc');
+    card.classList.add(level === ACCENT.ACCENT ? 'flash-acc' : 'flash');
     clearTimeout(flashTimer);
-    flashTimer = setTimeout(() => pa.classList.remove('flash', 'flash-acc'), 90);
+    flashTimer = setTimeout(() => card.classList.remove('flash', 'flash-acc'), 90);
   }
   if (S.vibrate && navigator.vibrate) navigator.vibrate(level === ACCENT.ACCENT ? 60 : 25);
 };
 
-// przełączniki
+// ---------------------------------------------------------------- opcje
 function bindToggle(id, key, after) {
   const b = $(id);
-  const render = () => b.setAttribute('aria-pressed', !!S[key]);
+  const render = () => b.setAttribute('aria-pressed', String(!!S[key]));
   render();
   b.addEventListener('click', () => {
     S[key] = !S[key];
@@ -685,22 +754,22 @@ bindToggle('tglFlash', 'flash');
 bindToggle('tglVibe', 'vibrate', () => S.vibrate && navigator.vibrate && navigator.vibrate(30));
 bindToggle('tglAwake', 'keepAwake', updateWakeLock);
 
-function bindPanelToggle(id, key, panelId, engineKey) {
+function bindPanelToggle(id, key, panelId) {
   const b = $(id);
   const render = () => {
-    b.setAttribute('aria-pressed', S[key].enabled);
+    b.setAttribute('aria-pressed', String(S[key].enabled));
     $(panelId).hidden = !S[key].enabled;
   };
   render();
   b.addEventListener('click', () => {
     S[key] = { ...S[key], enabled: !S[key].enabled };
-    metro[engineKey] = { ...S[key] };
+    metro[key] = { ...S[key] };
     render();
     save();
   });
 }
-bindPanelToggle('tglTrainer', 'trainer', 'trainerPanel', 'trainer');
-bindPanelToggle('tglTimer', 'timer', 'timerPanel', 'timer');
+bindPanelToggle('tglTrainer', 'trainer', 'trainerPanel');
+bindPanelToggle('tglTimer', 'timer', 'timerPanel');
 
 function bindNumber(id, obj, field, min, max) {
   const el = $(id);
@@ -715,12 +784,19 @@ function bindNumber(id, obj, field, min, max) {
 }
 bindNumber('trEvery', 'trainer', 'everyBars', 1, 64);
 bindNumber('trStep', 'trainer', 'step', 1, 50);
-bindNumber('trTarget', 'trainer', 'target', 20, 300);
+bindNumber('trTarget', 'trainer', 'target', BPM_MIN, BPM_MAX);
 bindNumber('tmMinutes', 'timer', 'minutes', 1, 180);
 
-// klawiatura (np. na tablecie): spacja = start/stop
+// pigułka w nagłówku metronomu: bieżący dźwięk ze stroika
+function renderPill() {
+  $('tunerPillText').textContent =
+    tunerState.live && tunerState.midi !== null ? `${noteLabel(tunerState.midi, nameOpts())} · ${fmtCents(tunerState.cents, ' ')}` : 'Stroik';
+}
+$('tunerPill').addEventListener('click', () => showTab('tuner'));
+
+// klawiatura (np. tablet): spacja = start/stop metronomu
 document.addEventListener('keydown', (e) => {
-  if (e.code === 'Space' && S.tab === 'metro' && !e.target.matches('input, select')) {
+  if (e.code === 'Space' && S.tab === 'metro' && sheet.hidden && !e.target.matches('input, select, button')) {
     e.preventDefault();
     toggleMetro();
   }
@@ -729,12 +805,14 @@ document.addEventListener('keydown', (e) => {
 // ================================================================ start
 buildGauge();
 renderTunerLabels();
+renderSettings();
 setBpm(S.bpm);
 renderBeats();
 renderSubdiv();
 renderPlayState();
+drawHistory();
+$('noteBand').classList.add('idle');
 showTab(S.tab);
-requestAnimationFrame(resizeHistory);
 
 if ('serviceWorker' in navigator && location.protocol !== 'file:') {
   window.addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(() => {}));

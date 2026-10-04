@@ -10,24 +10,26 @@ Aplikacja na telefon (PWA – działa w przeglądarce, można ją zainstalować 
 - Rozpoznawanie wysokości dźwięku z mikrofonu (metoda McLeoda – odporna na alikwoty, dobra dla saksofonu, klarnetu, trąbki, fletu, głosu, smyczków). Zakres ok. 27 Hz – 4,5 kHz.
 - **Dwie nazwy jednocześnie**: dźwięk koncertowy (jak na fortepianie) » dźwięk w stroju instrumentu, np. saksofon altowy: koncertowe **E♭ » C**.
 - Transpozycje: C, B♭ (klarnet, trąbka, sax sopranowy), B♭ 8va (sax tenorowy, klarnet basowy), E♭ (sax altowy), E♭ 8va (sax barytonowy), Es wysoki (klarnet Es), F (waltornia, rożek angielski), A (klarnet A), G (flet altowy), D (trąbka D), piccolo, gitara/kontrabas.
-- Strojenie **A4** 400–480 Hz (przyciski ±1 Hz, wpis z dokładnością 0,5 Hz, reset do 440 Hz).
-- Wskazówka ±50 centów, odchyłka w centach i w **Hz od nominału**, częstotliwość grana i docelowa.
-- **Podświetlenie na zielono**, gdy dźwięk mieści się w zielonej strefie (domyślnie ±5 centów, regulowane 1–20); żółte – blisko.
+- Strojenie **A4** 415–466 Hz (przyciski ±1 Hz, reset do 440 Hz) – w arkuszu Ustawienia.
+- Wskazówka ±50 centów (kolor: niebieski – za nisko, pomarańczowy – za wysoko, zielony – w tolerancji); opcjonalnie częstotliwość w Hz i odchyłka od nominału.
+- **Pas z nutą świeci na zielono**, gdy dźwięk mieści się w tolerancji (domyślnie ±5 centów, regulowane 1–15).
 - Wykres odchyłki w czasie (do oceny stabilności dźwięku).
-- Nazewnictwo: C D E … B, polskie/niemieckie (Cis, Es, B, H) lub Do Re Mi; krzyżyki albo bemole.
+- Notacja: polska (H, domyślna), międzynarodowa (B♭, B), Cis/Es lub Do Re Mi; znaki automatyczne, krzyżyki albo bemole.
 - Kamerton – ton wzorcowy dowolnego dźwięku (z uwzględnieniem A4).
 - Regulowana czułość mikrofonu.
 
 ## Metronom (wszystko na jednym ekranie)
 
-- Tempo 20–300 BPM: przyciski −/+ (przytrzymanie przyspiesza), suwak, wpis, **TAP** (wystukanie), włoska nazwa tempa.
-- Metrum 1–16 uderzeń, **akcenty** dla każdego uderzenia (akcent / zwykłe / cisza – dotknij kropki).
+- Tempo 30–240 BPM: przyciski ±1 i ±5, suwak, wpis, **Tap**, wybór włoskiej nazwy tempa (Grave … Prestissimo), wahadło.
+- Metrum 2/4, 3/4, 4/4, 5/4, 6/8 lub dowolne 1–16 uderzeń, **akcenty** dla każdego uderzenia (akcent / zwykłe / wyciszone – dotknij kafelka).
 - Podziały: ćwierćnuty, ósemki, triole, szesnastki, swing, kwintole.
 - Brzmienia: klik, drewno, beep, perkusja, krowi dzwonek, ton; głośność.
 - Błysk ekranu, wibracje, licznik czasu i taktów.
 - **Trener tempa** (co N taktów o X BPM do tempa docelowego) i **minutnik** (zatrzymanie po czasie).
 - Blokada wygaszania ekranu podczas gry.
-- Mini-metronom (tempo + start/stop) dostępny także na ekranie stroika.
+- Mini-metronom (tempo z listą włoskich nazw, ±5, start/stop) na ekranie stroika.
+
+Czcionki: Space Grotesk i JetBrains Mono (SIL Open Font License) – w katalogu `fonts/`, działają offline.
 
 Rytm jest planowany zegarem Web Audio z wyprzedzeniem, więc jest stabilny nawet przy obciążonym telefonie.
 

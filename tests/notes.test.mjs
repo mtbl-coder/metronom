@@ -8,6 +8,8 @@ import {
   transpositionLabel,
   transpositionKey,
   tempoName,
+  tempoBpm,
+  clampBpm,
   midiToFreq,
 } from '../js/notes.js';
 
@@ -29,8 +31,11 @@ test('odchyłka i Hz od nominału', () => {
 
 test('nazewnictwo', () => {
   assert.equal(noteLabel(60), 'C4');
-  assert.equal(noteLabel(63, { accidental: 'flat' }), 'E♭4');
-  assert.equal(noteLabel(63, { accidental: 'sharp' }), 'D♯4');
+  // domyślnie notacja polska ze znakami „auto”
+  assert.deepEqual([1, 3, 6, 8, 10, 11].map((pc) => pitchClassName(pc)), ['C♯', 'E♭', 'F♯', 'G♯', 'B', 'H']);
+  assert.equal(pitchClassName(10, { naming: 'en' }), 'B♭');
+  assert.equal(noteLabel(63, { naming: 'en', accidental: 'flat' }), 'E♭4');
+  assert.equal(noteLabel(63, { naming: 'en', accidental: 'sharp' }), 'D♯4');
   assert.equal(pitchClassName(10, { naming: 'de', accidental: 'flat' }), 'B');
   assert.equal(pitchClassName(11, { naming: 'de' }), 'H');
   assert.equal(pitchClassName(3, { naming: 'de', accidental: 'flat' }), 'Es');
@@ -40,11 +45,15 @@ test('nazewnictwo', () => {
 test('saksofon altowy: koncertowe Es = zapisane C', () => {
   const eb = getTransposition('Eb');
   assert.equal(pitchClassName(3 + eb.semis), 'C');
-  assert.equal(transpositionLabel(eb), 'E♭ (C » A)');
+  assert.equal(transpositionLabel(eb, { naming: 'en' }), 'E♭ (C » A)');
+  assert.equal(transpositionKey(eb), 'Es');
+  assert.equal(transpositionKey(eb, { naming: 'en' }), 'E♭');
   const bb = getTransposition('Bb');
   assert.equal(pitchClassName(10 + bb.semis), 'C');
+  assert.equal(transpositionKey(bb), 'B');
   assert.equal(transpositionKey(bb, { naming: 'de', accidental: 'flat' }), 'B');
-  assert.equal(transpositionKey(getTransposition('Bb8')), 'B♭ 8va');
+  assert.equal(transpositionKey(getTransposition('Bb8'), { naming: 'en' }), 'B♭ 8va');
+  assert.equal(transpositionKey(getTransposition('Bb8')), 'B 8va');
   assert.equal(transpositionKey(getTransposition('EbHi'), { naming: 'de', accidental: 'flat' }), 'Es wysoki');
   assert.equal(transpositionKey(getTransposition('A')), 'A');
   const f = getTransposition('F');
@@ -53,6 +62,13 @@ test('saksofon altowy: koncertowe Es = zapisane C', () => {
 
 test('nazwy temp', () => {
   assert.equal(tempoName(84), 'Andante');
-  assert.equal(tempoName(120), 'Allegro');
+  assert.equal(tempoName(120), 'Allegretto');
   assert.equal(tempoName(60), 'Larghetto');
+  assert.equal(tempoName(30), 'Grave');
+  assert.equal(tempoName(240), 'Prestissimo');
+  assert.equal(tempoName(10), 'Grave');
+  assert.equal(tempoBpm('Andante'), 92);
+  assert.equal(tempoBpm('Allegro'), 150);
+  assert.equal(clampBpm(300), 240);
+  assert.equal(clampBpm(12), 30);
 });

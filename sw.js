@@ -1,5 +1,5 @@
 // Service worker: aplikacja działa offline po pierwszym uruchomieniu.
-const CACHE = 'stroik-v1';
+const CACHE = 'stroik-v3';
 const ASSETS = [
   './',
   'index.html',
@@ -9,6 +9,19 @@ const ASSETS = [
   'js/pitch.js',
   'js/tuner.js',
   'js/metronome.js',
+  'fonts/fonts.css',
+  'fonts/jetbrains-mono-latin-500-normal.woff2',
+  'fonts/jetbrains-mono-latin-700-normal.woff2',
+  'fonts/jetbrains-mono-latin-ext-500-normal.woff2',
+  'fonts/jetbrains-mono-latin-ext-700-normal.woff2',
+  'fonts/space-grotesk-latin-400-normal.woff2',
+  'fonts/space-grotesk-latin-500-normal.woff2',
+  'fonts/space-grotesk-latin-600-normal.woff2',
+  'fonts/space-grotesk-latin-700-normal.woff2',
+  'fonts/space-grotesk-latin-ext-400-normal.woff2',
+  'fonts/space-grotesk-latin-ext-500-normal.woff2',
+  'fonts/space-grotesk-latin-ext-600-normal.woff2',
+  'fonts/space-grotesk-latin-ext-700-normal.woff2',
   'manifest.webmanifest',
   'icons/icon.svg',
   'icons/icon-192.png',

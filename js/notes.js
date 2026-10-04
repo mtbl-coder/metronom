@@ -1,22 +1,34 @@
 // Nazewnictwo dźwięków, transpozycje i przeliczenia częstotliwości.
 
+// auto = najczęściej używane znaki (C♯, E♭, F♯, G♯, B♭) – domyślne w stroikach.
 export const NAMINGS = {
+  pl: {
+    label: 'Polska (H)',
+    auto: ['C', 'C♯', 'D', 'E♭', 'E', 'F', 'F♯', 'G', 'G♯', 'A', 'B', 'H'],
+    sharp: ['C', 'C♯', 'D', 'D♯', 'E', 'F', 'F♯', 'G', 'G♯', 'A', 'A♯', 'H'],
+    flat: ['C', 'D♭', 'D', 'E♭', 'E', 'F', 'G♭', 'G', 'A♭', 'A', 'B', 'H'],
+  },
   en: {
-    label: 'C, D, E … B',
+    label: 'Międzyn. (B)',
+    auto: ['C', 'C♯', 'D', 'E♭', 'E', 'F', 'F♯', 'G', 'G♯', 'A', 'B♭', 'B'],
     sharp: ['C', 'C♯', 'D', 'D♯', 'E', 'F', 'F♯', 'G', 'G♯', 'A', 'A♯', 'B'],
     flat: ['C', 'D♭', 'D', 'E♭', 'E', 'F', 'G♭', 'G', 'A♭', 'A', 'B♭', 'B'],
   },
   de: {
-    label: 'C, D, E … H (Cis, Es, B)',
+    label: 'Cis, Es',
+    auto: ['C', 'Cis', 'D', 'Es', 'E', 'F', 'Fis', 'G', 'Gis', 'A', 'B', 'H'],
     sharp: ['C', 'Cis', 'D', 'Dis', 'E', 'F', 'Fis', 'G', 'Gis', 'A', 'Ais', 'H'],
     flat: ['C', 'Des', 'D', 'Es', 'E', 'F', 'Ges', 'G', 'As', 'A', 'B', 'H'],
   },
   solfege: {
-    label: 'Do, Re, Mi …',
+    label: 'Do Re Mi',
+    auto: ['Do', 'Do♯', 'Re', 'Mi♭', 'Mi', 'Fa', 'Fa♯', 'Sol', 'Sol♯', 'La', 'Si♭', 'Si'],
     sharp: ['Do', 'Do♯', 'Re', 'Re♯', 'Mi', 'Fa', 'Fa♯', 'Sol', 'Sol♯', 'La', 'La♯', 'Si'],
     flat: ['Do', 'Re♭', 'Re', 'Mi♭', 'Mi', 'Fa', 'Sol♭', 'Sol', 'La♭', 'La', 'Si♭', 'Si'],
   },
 };
+
+export const ACCIDENTALS = { auto: 'Auto', sharp: '♯', flat: '♭' };
 
 // semis = o ile półtonów zapis dla instrumentu jest wyżej od dźwięku koncertowego.
 // Np. saksofon altowy (Es) brzmi sekstę wielką niżej, więc koncertowe C to zapisane A (+9).
@@ -57,9 +69,9 @@ export function analyzeFrequency(freq, a4 = 440) {
   return { midi, cents, target, diffHz: freq - target };
 }
 
-export function pitchClassName(pc, { naming = 'en', accidental = 'flat' } = {}) {
-  const table = NAMINGS[naming] || NAMINGS.en;
-  return table[accidental === 'sharp' ? 'sharp' : 'flat'][((pc % 12) + 12) % 12];
+export function pitchClassName(pc, { naming = 'pl', accidental = 'auto' } = {}) {
+  const table = NAMINGS[naming] || NAMINGS.pl;
+  return (table[accidental] || table.auto)[((pc % 12) + 12) % 12];
 }
 
 // Notacja naukowa: MIDI 60 = C4, MIDI 69 = A4.
@@ -77,7 +89,9 @@ export function noteLabel(midi, opts = {}) {
 
 // Strój instrumentu, np. „E♭”, „B♭ 8va” (lub „Es”, „B” w nazewnictwie polskim).
 export function transpositionKey(t, opts = {}) {
-  const name = pitchClassName(-t.semis, opts);
+  // W notacji polskiej stroje nazywa się „B”, „Es”, „As” (jak w nutach orkiestrowych).
+  const keyOpts = opts.naming === 'pl' || opts.naming === undefined ? { naming: 'de', accidental: 'flat' } : { ...opts, accidental: 'flat' };
+  const name = pitchClassName(-t.semis, keyOpts);
   return t.tag ? `${name} ${t.tag}` : name;
 }
 
@@ -86,21 +100,34 @@ export function transpositionLabel(t, opts = {}) {
   return `${transpositionKey(t, opts)} (${pitchClassName(0, opts)} » ${pitchClassName(t.semis, opts)})`;
 }
 
-const TEMPO_NAMES = [
-  [24, 'Larghissimo'],
-  [40, 'Grave'],
-  [60, 'Largo'],
-  [66, 'Larghetto'],
-  [76, 'Adagio'],
-  [108, 'Andante'],
-  [120, 'Moderato'],
-  [156, 'Allegro'],
-  [176, 'Vivace'],
-  [200, 'Presto'],
-  [Infinity, 'Prestissimo'],
+// Włoskie nazwy tempa z zakresami BPM – wspólne dla metronomu i mini-metronomu.
+export const BPM_MIN = 30;
+export const BPM_MAX = 240;
+export const TEMPOS = [
+  { name: 'Grave', min: 30, max: 39 },
+  { name: 'Largo', min: 40, max: 59 },
+  { name: 'Larghetto', min: 60, max: 65 },
+  { name: 'Adagio', min: 66, max: 75 },
+  { name: 'Andante', min: 76, max: 107 },
+  { name: 'Moderato', min: 108, max: 119 },
+  { name: 'Allegretto', min: 120, max: 131 },
+  { name: 'Allegro', min: 132, max: 167 },
+  { name: 'Vivace', min: 168, max: 175 },
+  { name: 'Presto', min: 176, max: 199 },
+  { name: 'Prestissimo', min: 200, max: 240 },
 ];
 
+export function clampBpm(bpm) {
+  return Math.round(Math.max(BPM_MIN, Math.min(BPM_MAX, Number(bpm) || BPM_MIN)));
+}
+
 export function tempoName(bpm) {
-  for (const [max, name] of TEMPO_NAMES) if (bpm < max) return name;
-  return 'Prestissimo';
+  const b = clampBpm(bpm);
+  return (TEMPOS.find((t) => b >= t.min && b <= t.max) || TEMPOS[TEMPOS.length - 1]).name;
+}
+
+// Wybór nazwy → środek zakresu.
+export function tempoBpm(name) {
+  const t = TEMPOS.find((x) => x.name === name);
+  return t ? Math.round((t.min + t.max) / 2) : null;
 }
