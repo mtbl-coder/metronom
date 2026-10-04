@@ -218,9 +218,12 @@
 
         <!-- Synchronizacja -->
         <section class="block">
-          <div class="block-head"><div class="label">Opóźnienie obrazu</div><div id="avOffsetVal" class="mono hint">0 ms</div></div>
-          <input id="avOffset" type="range" min="-100" max="400" step="10" value="0" aria-label="Korekta opóźnienia obrazu względem dźwięku w milisekundach">
-          <div class="hint">Gdy błysk wyprzedza dźwięk (np. słuchawki Bluetooth), przesuń w prawo.</div>
+          <div class="label">Synchronizacja z dźwiękiem</div>
+          <div class="block-head"><div class="hint">Obraz i wibracja – opóźnienie</div><div id="avOffsetVal" class="mono hint">0 ms</div></div>
+          <input id="avOffset" type="range" min="-100" max="400" step="10" value="0" aria-label="Korekta opóźnienia obrazu i wibracji względem dźwięku w milisekundach">
+          <div class="block-head"><div class="hint">Wibracja – wyprzedzenie</div><div id="vibeLeadVal" class="mono hint">40 ms wcześniej</div></div>
+          <input id="vibeLead" type="range" min="0" max="200" step="5" value="40" aria-label="O ile milisekund wcześniej uruchomić wibrację">
+          <div class="hint">Błysk przed dźwiękiem (np. słuchawki Bluetooth) – przesuń pierwszy suwak w prawo. Wibracja spóźniona – zwiększ wyprzedzenie.</div>
         </section>
 
         <!-- Opcje -->

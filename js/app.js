@@ -45,6 +45,7 @@ const DEFAULTS = {
   vibrate: false,
   keepAwake: true,
   avOffset: 0, // ms – ręczna korekta opóźnienia obrazu względem dźwięku
+  vibeLead: 40, // ms – o ile wcześniej uruchomić wibrację (bezwładność silnika)
   trainer: { enabled: false, step: 2, everyBars: 4, target: 140 },
   timer: { enabled: false, minutes: 5 },
 };
@@ -717,13 +718,17 @@ function audioToPerf(t) {
 }
 
 const visualQueue = [];
+const vibeQueue = []; // wibracja ma własną kolejkę – wyzwalana wcześniej o bezwładność silnika
 const PEND_AMPLITUDE = 28;
 const pend = { last: null, side: 1, interval: 500 };
 let frameMs = 16.7;
 let lastFrame = 0;
 let rafId = null;
 
-metro.onSchedule = (ev) => visualQueue.push(ev);
+metro.onSchedule = (ev) => {
+  visualQueue.push(ev);
+  if (ev.slot === 0 && ev.level !== ACCENT.MUTE) vibeQueue.push(ev);
+};
 
 function visualLoop(now) {
   if (lastFrame) frameMs = frameMs * 0.9 + Math.min(50, now - lastFrame) * 0.1;
@@ -738,6 +743,18 @@ function visualLoop(now) {
     if (ev.slot === 0) fired = { ...ev, target };
   }
   if (fired) onBeatVisible(fired);
+
+  // wibracja: wywołanie wcześniej o czas rozpędzania silnika, żeby drgnięcie było odczuwalne razem z dźwiękiem
+  let buzz = null;
+  while (vibeQueue.length) {
+    const target = audioToPerf(vibeQueue[0].time) - S.vibeLead;
+    if (target - frameMs / 2 > now) break;
+    buzz = vibeQueue.shift();
+  }
+  if (buzz && S.vibrate && navigator.vibrate) {
+    if (window.__vibeLog) window.__vibeLog.push(performance.now() - audioToPerf(buzz.time)); // pomiar w testach
+    navigator.vibrate(buzz.level === ACCENT.ACCENT ? 70 : 40);
+  }
 
   // wahadło: skrajne położenie dokładnie w chwili uderzenia, ruch liczony z zegara, nie z animacji CSS
   if (pend.last === null && visualQueue.length) {
@@ -758,7 +775,7 @@ function visualLoop(now) {
     $('pendulum').style.transform = `rotate(${(pend.side * PEND_AMPLITUDE * shaped).toFixed(2)}deg)`;
   }
 
-  rafId = metro.playing || visualQueue.length ? requestAnimationFrame(visualLoop) : null;
+  rafId = metro.playing || visualQueue.length || vibeQueue.length ? requestAnimationFrame(visualLoop) : null;
 }
 
 let flashTimer = null;
@@ -779,11 +796,11 @@ function onBeatVisible({ beat, level, bpm, target }) {
     clearTimeout(flashTimer);
     flashTimer = setTimeout(() => card.classList.remove('flash', 'flash-acc'), 100);
   }
-  if (S.vibrate && navigator.vibrate) navigator.vibrate(level === ACCENT.ACCENT ? 60 : 25);
 }
 
 function startVisuals() {
   visualQueue.length = 0;
+  vibeQueue.length = 0;
   pend.last = null;
   $('pendulum').style.transition = 'none';
   lastFrame = 0;
@@ -791,6 +808,7 @@ function startVisuals() {
 }
 function stopVisuals() {
   visualQueue.length = 0;
+  vibeQueue.length = 0;
   pend.last = null;
   if (rafId) cancelAnimationFrame(rafId);
   rafId = null;
@@ -885,9 +903,31 @@ function renderAvOffset() {
 $('avOffset').addEventListener('input', (e) => {
   S.avOffset = +e.target.value;
   renderAvOffset();
+
+function renderVibeLead() {
+  $('vibeLead').value = S.vibeLead;
+  $('vibeLeadVal').textContent = `${S.vibeLead} ms wcześniej`;
+}
+$('vibeLead').addEventListener('input', (e) => {
+  S.vibeLead = +e.target.value;
+  renderVibeLead();
+  save();
+});
+renderVibeLead();
   save();
 });
 renderAvOffset();
+
+function renderVibeLead() {
+  $('vibeLead').value = S.vibeLead;
+  $('vibeLeadVal').textContent = `${S.vibeLead} ms wcześniej`;
+}
+$('vibeLead').addEventListener('input', (e) => {
+  S.vibeLead = +e.target.value;
+  renderVibeLead();
+  save();
+});
+renderVibeLead();
 
 // pigułka w nagłówku metronomu: bieżący dźwięk ze stroika
 function renderPill() {

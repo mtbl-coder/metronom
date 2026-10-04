@@ -1,5 +1,5 @@
 // Service worker: aplikacja działa offline po pierwszym uruchomieniu.
-const CACHE = 'stroik-v4';
+const CACHE = 'stroik-v5';
 const ASSETS = [
   './',
   'index.html',
