@@ -44,6 +44,7 @@ const DEFAULTS = {
   flash: true,
   vibrate: false,
   keepAwake: true,
+  avOffset: 0, // ms – ręczna korekta opóźnienia obrazu względem dźwięku
   trainer: { enabled: false, step: 2, everyBars: 4, target: 140 },
   timer: { enabled: false, minutes: 5 },
 };
@@ -698,18 +699,107 @@ function fmtTime(sec) {
 function renderElapsed() {
   $('elapsedInfo').textContent = `${fmtTime(metro.elapsed())} · takt ${metro.playing ? metro.bar + 1 : 1}`;
 }
-let pendSide = 1;
-function swingPendulum(on) {
-  const arm = $('pendulum');
-  if (on) {
-    pendSide = -pendSide;
-    arm.style.transitionDuration = `${Math.round(60000 / metro.bpm)}ms`;
-    arm.style.transform = `rotate(${28 * pendSide}deg)`;
-  } else {
-    arm.style.transitionDuration = '300ms';
-    arm.style.transform = 'rotate(0deg)';
+// ---------------------------------------------------------------- synchronizacja obrazu z dźwiękiem
+// Metronom planuje dźwięk na zegarze AudioContext. Moment, w którym dźwięk faktycznie wychodzi z głośnika,
+// jest późniejszy o opóźnienie wyjścia (Android 30–150 ms, Bluetooth nawet 300 ms). Czas każdego uderzenia
+// przeliczamy na zegar performance.now() w chwili wyjścia dźwięku i pokazujemy w najbliższej klatce (rAF).
+function audioToPerf(t) {
+  const ctx = audioCtx;
+  let perf = null;
+  if (ctx.getOutputTimestamp) {
+    const ts = ctx.getOutputTimestamp();
+    if (ts && ts.performanceTime > 0 && ts.contextTime > 0) perf = ts.performanceTime + (t - ts.contextTime) * 1000;
   }
+  if (perf === null) {
+    perf = performance.now() + (t - ctx.currentTime + (ctx.outputLatency || 0) + (ctx.baseLatency || 0)) * 1000;
+  }
+  return perf + S.avOffset;
 }
+
+const visualQueue = [];
+const PEND_AMPLITUDE = 28;
+const pend = { last: null, side: 1, interval: 500 };
+let frameMs = 16.7;
+let lastFrame = 0;
+let rafId = null;
+
+metro.onSchedule = (ev) => visualQueue.push(ev);
+
+function visualLoop(now) {
+  if (lastFrame) frameMs = frameMs * 0.9 + Math.min(50, now - lastFrame) * 0.1;
+  lastFrame = now;
+
+  // zdarzenia, których dźwięk wybrzmiewa najpóźniej w połowie bieżącej klatki
+  let fired = null;
+  while (visualQueue.length) {
+    const target = audioToPerf(visualQueue[0].time);
+    if (target - frameMs / 2 > now) break;
+    const ev = visualQueue.shift();
+    if (ev.slot === 0) fired = { ...ev, target };
+  }
+  if (fired) onBeatVisible(fired);
+
+  // wahadło: skrajne położenie dokładnie w chwili uderzenia, ruch liczony z zegara, nie z animacji CSS
+  if (pend.last === null && visualQueue.length) {
+    const first = visualQueue.find((e) => e.slot === 0);
+    if (first) {
+      pend.interval = 60000 / first.bpm;
+      pend.last = audioToPerf(first.time) - pend.interval; // start ze środka, pierwszy dźwięk = skrajne położenie
+      pend.side = -1;
+      pend.fromCenter = true;
+    }
+  }
+  if (pend.last !== null) {
+    const phase = Math.max(0, Math.min(1, (now - pend.last) / pend.interval));
+    let x = 1 - 2 * phase; // +1 → −1
+    if (pend.fromCenter) x = Math.min(0, x) * 1; // pierwszy ruch: ze środka do skrajnego położenia
+    // prawie liniowy ruch z łagodnym nawrotem – moment uderzenia jest wyraźnie widoczny
+    const shaped = 0.7 * x + 0.3 * Math.sin((x * Math.PI) / 2);
+    $('pendulum').style.transform = `rotate(${(pend.side * PEND_AMPLITUDE * shaped).toFixed(2)}deg)`;
+  }
+
+  rafId = metro.playing || visualQueue.length ? requestAnimationFrame(visualLoop) : null;
+}
+
+let flashTimer = null;
+function onBeatVisible({ beat, level, bpm, target }) {
+  if (window.__syncLog) window.__syncLog.push(performance.now() - target); // pomiar w testach
+  currentBeat = beat;
+  [...$('beatTiles').children].forEach((t, i) => t.classList.toggle('now', i === beat));
+  renderMiniBeats();
+  pend.side = pend.last === null ? 1 : -pend.side;
+  pend.fromCenter = false;
+  pend.last = target;
+  pend.interval = 60000 / bpm;
+  if (level === ACCENT.MUTE) return;
+  if (S.flash) {
+    const card = $('tempoCard');
+    card.classList.remove('flash', 'flash-acc');
+    card.classList.add(level === ACCENT.ACCENT ? 'flash-acc' : 'flash');
+    clearTimeout(flashTimer);
+    flashTimer = setTimeout(() => card.classList.remove('flash', 'flash-acc'), 100);
+  }
+  if (S.vibrate && navigator.vibrate) navigator.vibrate(level === ACCENT.ACCENT ? 60 : 25);
+}
+
+function startVisuals() {
+  visualQueue.length = 0;
+  pend.last = null;
+  $('pendulum').style.transition = 'none';
+  lastFrame = 0;
+  if (!rafId) rafId = requestAnimationFrame(visualLoop);
+}
+function stopVisuals() {
+  visualQueue.length = 0;
+  pend.last = null;
+  if (rafId) cancelAnimationFrame(rafId);
+  rafId = null;
+  const arm = $('pendulum');
+  arm.style.transition = 'transform 300ms ease-out';
+  arm.style.transform = 'rotate(0deg)';
+  $('tempoCard').classList.remove('flash', 'flash-acc');
+}
+
 function renderPlayState() {
   const on = metro.playing;
   for (const id of ['playBtn', 'miniPlay']) {
@@ -718,40 +808,25 @@ function renderPlayState() {
   }
   $('playText').textContent = on ? 'Stop' : 'Start';
   clearInterval(elapsedTimer);
-  if (on) elapsedTimer = setInterval(renderElapsed, 200);
-  else {
+  if (on) {
+    elapsedTimer = setInterval(renderElapsed, 200);
+    if (!rafId) startVisuals();
+  } else {
     currentBeat = -1;
-    swingPendulum(false);
+    stopVisuals();
     renderBeats();
   }
   renderElapsed();
   updateWakeLock();
 }
 function toggleMetro() {
+  if (!metro.playing) stopVisuals(); // czysta kolejka przed startem
   metro.toggle();
   renderPlayState();
 }
 metro.onStop = renderPlayState;
 $('playBtn').addEventListener('click', toggleMetro);
 $('miniPlay').addEventListener('click', toggleMetro);
-
-let flashTimer = null;
-metro.onTick = (beat, slot, level) => {
-  if (slot !== 0) return;
-  currentBeat = beat;
-  [...$('beatTiles').children].forEach((t, i) => t.classList.toggle('now', i === beat));
-  renderMiniBeats();
-  swingPendulum(true);
-  if (level === ACCENT.MUTE) return;
-  if (S.flash) {
-    const card = $('tempoCard');
-    card.classList.remove('flash', 'flash-acc');
-    card.classList.add(level === ACCENT.ACCENT ? 'flash-acc' : 'flash');
-    clearTimeout(flashTimer);
-    flashTimer = setTimeout(() => card.classList.remove('flash', 'flash-acc'), 90);
-  }
-  if (S.vibrate && navigator.vibrate) navigator.vibrate(level === ACCENT.ACCENT ? 60 : 25);
-};
 
 // ---------------------------------------------------------------- opcje
 function bindToggle(id, key, after) {
@@ -801,6 +876,18 @@ bindNumber('trEvery', 'trainer', 'everyBars', 1, 64);
 bindNumber('trStep', 'trainer', 'step', 1, 50);
 bindNumber('trTarget', 'trainer', 'target', BPM_MIN, BPM_MAX);
 bindNumber('tmMinutes', 'timer', 'minutes', 1, 180);
+
+// korekta synchronizacji (np. słuchawki Bluetooth, których opóźnienia system nie raportuje)
+function renderAvOffset() {
+  $('avOffset').value = S.avOffset;
+  $('avOffsetVal').textContent = `${S.avOffset > 0 ? '+' : S.avOffset < 0 ? '−' : ''}${Math.abs(S.avOffset)} ms`;
+}
+$('avOffset').addEventListener('input', (e) => {
+  S.avOffset = +e.target.value;
+  renderAvOffset();
+  save();
+});
+renderAvOffset();
 
 // pigułka w nagłówku metronomu: bieżący dźwięk ze stroika
 function renderPill() {

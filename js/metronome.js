@@ -34,7 +34,8 @@ export class Metronome {
     this.trainer = { enabled: false, step: 2, everyBars: 4, target: 140 };
     this.timer = { enabled: false, minutes: 5 };
     this.playing = false;
-    this.onTick = null; // (beat, sub, accentLevel) – wywoływane w momencie dźwięku
+    this.onTick = null; // (beat, sub, accentLevel) – wywoływane w momencie dźwięku (przybliżenie przez setTimeout)
+    this.onSchedule = null; // ({time, beat, slot, level, bpm}) – czas dźwięku na zegarze AudioContext
     this.onBpmChange = null;
     this.onStop = null;
     this._timerId = null;
@@ -107,6 +108,13 @@ export class Metronome {
   _schedule() {
     const ctx = this.ctx;
     const ahead = ctx.currentTime + 0.12;
+    // Gdy wątek był zablokowany (np. aplikacja w tle), nie odtwarzamy zaległych uderzeń naraz –
+    // przesuwamy siatkę rytmu do przodu o całe sloty.
+    if (this.nextTime < ctx.currentTime - 0.05) {
+      const step = 60 / this.bpm / this._pattern().length;
+      const missed = Math.ceil((ctx.currentTime - this.nextTime) / step);
+      for (let i = 0; i < missed; i++) this._advance();
+    }
     while (this.playing && this.nextTime < ahead) {
       const pattern = this._pattern();
       if (this.slot >= pattern.length) this.slot = 0;
@@ -117,25 +125,18 @@ export class Metronome {
       else if (level === ACCENT.ACCENT) this._play(t, 'accent', 1);
       else if (level === ACCENT.BEAT) this._play(t, 'beat', 0.85);
 
-      if (this.onTick && level !== null) {
-        const beat = this.beat;
-        const slot = this.slot;
-        const delay = Math.max(0, (t - ctx.currentTime) * 1000);
-        setTimeout(() => this.playing && this.onTick(beat, slot, level), delay);
-      }
-
-      // przejście do następnego slotu
-      this.nextTime += 60 / this.bpm / pattern.length;
-      this.slot++;
-      if (this.slot >= pattern.length) {
-        this.slot = 0;
-        this.beat++;
-        if (this.beat >= this.beatsPerBar) {
-          this.beat = 0;
-          this.bar++;
-          this._onBar();
+      if (level !== null) {
+        // onSchedule dostaje dokładny czas dźwięku na zegarze audio – UI sam synchronizuje obraz.
+        if (this.onSchedule) this.onSchedule({ time: t, beat: this.beat, slot: this.slot, level, bpm: this.bpm });
+        else if (this.onTick) {
+          const beat = this.beat;
+          const slot = this.slot;
+          const delay = Math.max(0, (t - ctx.currentTime) * 1000);
+          setTimeout(() => this.playing && this.onTick(beat, slot, level), delay);
         }
       }
+
+      this._advance();
 
       if (this.timer.enabled && this.nextTime - this.startTime >= this.timer.minutes * 60) {
         const delay = Math.max(0, (this.nextTime - ctx.currentTime) * 1000);
@@ -143,6 +144,22 @@ export class Metronome {
         this._timerId = null;
         setTimeout(() => this.stop(), delay);
         break;
+      }
+    }
+  }
+
+  // przejście do następnego slotu siatki rytmu
+  _advance() {
+    const pattern = this._pattern();
+    this.nextTime += 60 / this.bpm / pattern.length;
+    this.slot++;
+    if (this.slot >= pattern.length) {
+      this.slot = 0;
+      this.beat++;
+      if (this.beat >= this.beatsPerBar) {
+        this.beat = 0;
+        this.bar++;
+        this._onBar();
       }
     }
   }
