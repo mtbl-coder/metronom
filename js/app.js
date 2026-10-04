@@ -220,10 +220,21 @@ function fmtHz(f) {
 
 function setNote(nameEl, octEl, midi) {
   const n = noteName(midi, nameOpts());
+  if (nameEl.textContent === n.name && octEl.textContent === String(n.octave)) return;
   nameEl.textContent = n.name;
-  nameEl.className = 'note' + (n.name.length >= 4 ? ' len4' : n.name.length === 3 ? ' len3' : '');
   octEl.textContent = n.octave;
+  fitNote(nameEl.parentElement);
 }
+
+// Rozmiar czcionki jest stały (etykiety się nie przesuwają). Tylko gdy nazwa (np. „Sol♯”) nie mieści się
+// w kolumnie, cały wiersz jest wizualnie zwężany od dołu – bez zmiany wysokości układu.
+function fitNote(row) {
+  row.style.transform = '';
+  const avail = row.parentElement.clientWidth;
+  const need = row.scrollWidth;
+  if (avail > 0 && need > avail) row.style.transform = `scale(${(avail / need).toFixed(3)})`;
+}
+window.addEventListener('resize', () => document.querySelectorAll('.band-note').forEach(fitNote));
 
 function renderTunerLabels() {
   const t = getTransposition(S.transposition);
@@ -231,7 +242,11 @@ function renderTunerLabels() {
   $('tunerSub').textContent = `A4 = ${+S.a4.toFixed(1)} Hz · strój ${key}`;
   $('instrLabel').textContent = key;
   $('noteBand').classList.toggle('single', t.semis === 0);
-  if (tunerState.midi !== null) renderNote(tunerState.midi);
+  if (tunerState.midi !== null) {
+    $('concertNote').textContent = '';
+    $('writtenNote').textContent = '';
+    renderNote(tunerState.midi);
+  }
   renderFork();
 }
 
@@ -268,7 +283,7 @@ function onTunerResult(r) {
     band.classList.remove('idle');
     if (S.showHz) {
       const diff = r.freq - midiToFreq(a.midi, S.a4);
-      $('hzText').textContent = `${fmtHz(r.freq)} Hz · ${diff >= 0 ? '+' : '−'}${Math.abs(diff).toFixed(2)}`;
+      $('hzText').innerHTML = `${fmtHz(r.freq)} Hz<br>${diff >= 0 ? '+' : '−'}${Math.abs(diff).toFixed(2)} Hz`;
     }
     pushHistory(c);
   } else {

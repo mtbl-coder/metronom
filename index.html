@@ -52,18 +52,18 @@
 
         <!-- Wskaźnik -->
         <section class="card gauge-card" aria-label="Wskaźnik stroju">
-          <svg id="gauge" class="gauge" viewBox="0 0 320 190" role="img" aria-label="Odchyłka">
+          <svg id="gauge" class="gauge" viewBox="10 16 300 174" role="img" aria-label="Odchyłka">
             <path class="arc-bg" d="M 15.1 133.2 A 150 150 0 0 1 304.9 133.2"/>
             <path id="tolArc" class="arc-tol" d=""/>
             <g id="gaugeTicks"></g>
             <text class="side flat" x="22" y="184">za nisko</text>
             <text class="side sharp" x="298" y="184" text-anchor="end">za wysoko</text>
-            <text id="hzText" class="hz mono" x="160" y="184" text-anchor="middle"></text>
-            <text id="centsText" class="cents mono" x="160" y="140" text-anchor="middle">—</text>
             <g id="needle" class="needle"><line x1="160" y1="172" x2="160" y2="26"/></g>
             <circle class="hub" cx="160" cy="172" r="7"/>
             <circle class="hub-in" cx="160" cy="172" r="2.5"/>
           </svg>
+          <div id="centsText" class="corner cents-corner" aria-hidden="true">—</div>
+          <div id="hzText" class="corner hz-corner" aria-hidden="true"></div>
           <button id="micStart" class="cta mic-start">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0"/><line x1="12" y1="18" x2="12" y2="21"/></svg>
             <span>Włącz mikrofon</span>
@@ -139,14 +139,18 @@
           </div>
 
           <div class="bpm-row">
-            <button id="bpmDown5" class="btn-2 sq56" aria-label="Zwolnij o 5">−5</button>
-            <button id="bpmDown" class="btn-ghost sq44" aria-label="Zwolnij o 1">−</button>
+            <div class="bpm-stack">
+              <button id="bpmDown5" class="btn-2" aria-label="Zwolnij o 5">−5</button>
+              <button id="bpmDown" class="btn-ghost" aria-label="Zwolnij o 1">−</button>
+            </div>
             <div class="bpm-mid">
               <input id="bpmValue" class="bpm-value mono" type="number" inputmode="numeric" min="30" max="240" value="84" aria-label="Tempo w BPM">
               <div class="bpm-unit">BPM</div>
             </div>
-            <button id="bpmUp" class="btn-ghost sq44" aria-label="Przyspiesz o 1">+</button>
-            <button id="bpmUp5" class="btn-2 sq56" aria-label="Przyspiesz o 5">+5</button>
+            <div class="bpm-stack">
+              <button id="bpmUp5" class="btn-2" aria-label="Przyspiesz o 5">+5</button>
+              <button id="bpmUp" class="btn-ghost" aria-label="Przyspiesz o 1">+</button>
+            </div>
           </div>
 
           <label class="field-row">
