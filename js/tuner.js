@@ -1,6 +1,13 @@
 // Odczyt mikrofonu i ciągła analiza wysokości dźwięku.
 import { detectPitch } from './pitch.js';
 
+// Tryby reakcji: odstęp analiz (ms), długość mediany, liczba odczytów przed pokazaniem dźwięku.
+export const RESPONSE = {
+  fast: { label: 'Szybka', interval: 15, median: 1, confirm: 1, smoothing: 0.75, transition: 0.03 },
+  normal: { label: 'Normalna', interval: 20, median: 3, confirm: 2, smoothing: 0.5, transition: 0.06 },
+  calm: { label: 'Spokojna', interval: 40, median: 5, confirm: 3, smoothing: 0.25, transition: 0.12 },
+};
+
 export class Tuner {
   constructor(getContext) {
     this.getContext = getContext;
@@ -8,7 +15,11 @@ export class Tuner {
     this.onResult = null; // ({freq, clarity, rms}) – freq = 0 gdy brak tonu
     this.sensitivity = 0.5; // 0..1 – wyższa = reaguje na cichsze dźwięki
     this._history = [];
-    this._interval = 45; // ms między analizami
+    this.setResponse('normal');
+  }
+
+  setResponse(mode) {
+    this.response = RESPONSE[mode] || RESPONSE.normal;
   }
 
   get minRms() {
@@ -51,7 +62,7 @@ export class Tuner {
     this.analyser.getFloatTimeDomainData(this.buf);
     const r = detectPitch(this.buf, this.ctx.sampleRate, { minRms: this.minRms });
     this._emit(this._stabilize(r));
-    this._timer = setTimeout(() => this._loop(), this._interval);
+    this._timer = setTimeout(() => this._loop(), this.response.interval);
   }
 
   // Mediana z ostatnich odczytów odrzuca pojedyncze skoki (np. błędy oktawy na ataku dźwięku).
@@ -63,9 +74,12 @@ export class Tuner {
     }
     if (h.length && Math.abs(1200 * Math.log2(r.freq / h[h.length - 1])) > 80) h.length = 0;
     h.push(r.freq);
-    if (h.length > 5) h.shift();
-    if (h.length < 2) return { ...r, freq: 0, pending: true };
-    const sorted = [...h].sort((a, b) => a - b);
+    const { median, confirm } = this.response;
+    while (h.length > Math.max(median, confirm)) h.shift();
+    if (h.length < confirm) return { ...r, freq: 0, pending: true };
+    if (median <= 1) return r;
+    const recent = h.slice(-median);
+    const sorted = recent.sort((a, b) => a - b);
     return { ...r, freq: sorted[Math.floor(sorted.length / 2)] };
   }
 

@@ -2,6 +2,7 @@
 // Działa dobrze dla instrumentów dętych i głosu – odporna na silne alikwoty.
 
 const TARGET_RATE = 20000; // przed analizą sygnał jest decymowany do ~20–24 kHz
+const LOW_FREQ = 160; // poniżej – analiza w dłuższym oknie
 
 export function rms(buf) {
   let s = 0;
@@ -39,10 +40,15 @@ export function detectPitch(buf, sampleRate, opts = {}) {
   if (level < minRms) return { freq: 0, clarity: 0, rms: level };
 
   const factor = Math.max(1, Math.floor(sampleRate / TARGET_RATE));
-  let r = mpm(buf, sampleRate, { minFreq, maxFreq, keyThreshold, factor, maxLen: 2048 });
+  // Najpierw krótkie okno (~45 ms) – szybka reakcja. Długie okno (~90 ms) tylko dla niskich dźwięków,
+  // których okres nie mieści się wiarygodnie w krótkim oknie.
+  let r = mpm(buf, sampleRate, { minFreq, maxFreq, keyThreshold, factor, maxLen: 1024 });
+  if (!r || r.freq < LOW_FREQ) {
+    r = mpm(buf, sampleRate, { minFreq, maxFreq, keyThreshold, factor, maxLen: 2048 });
+  }
   // Wysokie dźwięki: dokładniejszy pomiar na pełnej częstotliwości próbkowania (mały koszt, bo τ jest krótkie).
   if (r && factor > 1 && r.freq > 800) {
-    const fine = mpm(buf, sampleRate, { minFreq: r.freq / 1.6, maxFreq, keyThreshold, factor: 1, maxLen: 2048 });
+    const fine = mpm(buf, sampleRate, { minFreq: r.freq / 1.6, maxFreq, keyThreshold, factor: 1, maxLen: 1024 });
     if (fine && Math.abs(1200 * Math.log2(fine.freq / r.freq)) < 50) r = fine;
   }
   if (!r || r.clarity < minClarity) return { freq: 0, clarity: r ? r.clarity : 0, rms: level };

@@ -10,7 +10,7 @@ import {
   transpositionKey,
   tempoName,
 } from './notes.js';
-import { Tuner, ToneGenerator } from './tuner.js';
+import { Tuner, ToneGenerator, RESPONSE } from './tuner.js';
 import { Metronome, SOUNDS, ACCENT } from './metronome.js';
 
 const $ = (id) => document.getElementById(id);
@@ -24,6 +24,7 @@ const DEFAULTS = {
   a4: 440,
   tolerance: 5,
   sensitivity: 50,
+  response: 'normal',
   forkMidi: 69,
   bpm: 84,
   beats: 4,
@@ -207,7 +208,7 @@ function onTunerResult(r) {
       tunerState.cents = a.cents;
       renderNote(a.midi);
     } else {
-      tunerState.cents += (a.cents - tunerState.cents) * 0.45; // wygładzanie wskazówki
+      tunerState.cents += (a.cents - tunerState.cents) * tuner.response.smoothing; // wygładzanie wskazówki
     }
     tunerState.lastSeen = now;
     const c = tunerState.cents;
@@ -240,8 +241,16 @@ function onTunerResult(r) {
   drawHistory();
 }
 
+// Wykres ma stałą skalę czasu (~45 ms na punkt) niezależnie od tempa analiz.
+let lastHistoryAt = 0;
 function pushHistory(c) {
+  const now = performance.now();
   const h = tunerState.history;
+  if (now - lastHistoryAt < 40 && h.length) {
+    if (c !== null) h[h.length - 1] = c;
+    return;
+  }
+  lastHistoryAt = now;
   h.push(c);
   if (h.length > HISTORY_LEN) h.shift();
 }
@@ -319,6 +328,11 @@ function drawHistory() {
 
 tuner.onResult = onTunerResult;
 tuner.sensitivity = S.sensitivity / 100;
+function applyResponse() {
+  tuner.setResponse(S.response);
+  $('needle').style.transition = `transform ${tuner.response.transition}s linear, opacity .3s`;
+}
+applyResponse();
 let tunerWanted = false;
 
 async function startTuner() {
@@ -412,6 +426,15 @@ function fillSettings() {
   $('tolSlider').value = S.tolerance;
   $('tolVal').textContent = S.tolerance;
   $('sensSlider').value = S.sensitivity;
+  const rr = $('responseRadios');
+  rr.textContent = '';
+  for (const [key, def] of Object.entries(RESPONSE)) {
+    const l = document.createElement('label');
+    l.className = 'radio';
+    l.innerHTML = `<input type="radio" name="response" value="${key}"><span>${def.label}</span>`;
+    l.querySelector('input').checked = S.response === key;
+    rr.appendChild(l);
+  }
 }
 function openSettings() {
   fillSettings();
@@ -427,6 +450,10 @@ dlg.addEventListener('change', (e) => {
   const el = e.target;
   if (el.name === 'naming') S.naming = el.value;
   else if (el.name === 'accidental') S.accidental = el.value;
+  else if (el.name === 'response') {
+    S.response = el.value;
+    applyResponse();
+  }
   else if (el.id === 'transpSel') S.transposition = el.value;
   else if (el.id === 'a4Input') setA4(parseFloat(el.value));
   else return;
@@ -460,6 +487,11 @@ $('tolSlider').addEventListener('input', (e) => {
 $('sensSlider').addEventListener('input', (e) => {
   S.sensitivity = +e.target.value;
   tuner.sensitivity = S.sensitivity / 100;
+function applyResponse() {
+  tuner.setResponse(S.response);
+  $('needle').style.transition = `transform ${tuner.response.transition}s linear, opacity .3s`;
+}
+applyResponse();
   save();
 });
 

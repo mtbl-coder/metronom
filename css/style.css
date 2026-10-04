@@ -125,7 +125,7 @@ main { flex: 1; display: flex; flex-direction: column; }
 .gauge .lbl.zone { fill: var(--green-hi); }
 .gauge .zone-fill { fill: rgba(140, 220, 0, .09); }
 .needle line { stroke: var(--red); stroke-width: 3.5; stroke-linecap: round; }
-.needle { transform-origin: 160px 172px; transition: transform .12s linear, opacity .3s; }
+.needle { transform-origin: 160px 172px; transition: transform .06s linear, opacity .3s; }
 .needle.idle { opacity: .25; }
 .end-name { fill: var(--tick); font-size: 14px; }
 .ok-dot { fill: var(--green-hi); opacity: 0; transition: opacity .15s; }
@@ -261,6 +261,7 @@ main { flex: 1; display: flex; flex-direction: column; }
 .dialog .mt { margin-top: 12px; }
 .radio-grid { display: grid; grid-template-columns: 1fr auto; gap: 10px; clear: both; }
 .radio-col { display: flex; flex-direction: column; gap: 10px; }
+.radio-row { display: flex; justify-content: space-between; gap: 8px; clear: both; }
 .radio { display: flex; align-items: center; gap: 10px; font-size: 1.05rem; }
 .radio input { width: 24px; height: 24px; accent-color: #1a73ff; margin: 0; }
 .transp-sel { width: 100%; background: #870000; height: 56px; font-size: 1.1rem; border-radius: 28px; text-align: center; clear: both; }
