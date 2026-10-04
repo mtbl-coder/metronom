@@ -1,0 +1,11 @@
+{
+  "name": "stroik-metronom",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Stroik chromatyczny z transpozycją i metronom – aplikacja PWA",
+  "scripts": {
+    "test": "node --test tests/*.test.mjs",
+    "start": "npx http-server -c-1 -p 8080 ."
+  }
+}

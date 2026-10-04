@@ -1,0 +1,236 @@
+<!doctype html>
+<html lang="pl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+  <meta name="theme-color" content="#000000">
+  <meta name="description" content="Stroik chromatyczny z transpozycją dla instrumentów dętych oraz metronom.">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black">
+  <title>Stroik i Metronom</title>
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icons/icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="icons/icon-192.png">
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="tabs" role="tablist">
+      <button class="tab active" role="tab" data-tab="tuner" aria-selected="true">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3a9 9 0 0 0-9 9h2a7 7 0 0 1 14 0h2a9 9 0 0 0-9-9zm4.2 4.4L11 12.6a1.5 1.5 0 1 0 1.4 1.4l5.2-5.2-1.4-1.4z"/></svg>
+        Stroik
+      </button>
+      <button class="tab" role="tab" data-tab="metro" aria-selected="false">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9.5 2h5l4.5 19H5L9.5 2zm1.6 2-1.2 5h4.2l-1.2-5h-1.8zM9.4 11l-2 8h9.2l-1.3-5.3 2.4-5.2-1.8-.8-2.6 5.6-.4-.3H11.5l.6-2H9.4z"/></svg>
+        Metronom
+      </button>
+    </div>
+  </header>
+
+  <main>
+    <!-- ================= STROIK ================= -->
+    <section id="tuner" class="screen active" role="tabpanel">
+      <div class="minibar">
+        <button id="miniBpm" class="mini-bpm" title="Tempo – przejdź do metronomu"><span class="q">♩=</span><span id="miniBpmVal">84</span></button>
+        <button id="miniPlay" class="mini-play" title="Start/stop metronomu" aria-label="Start metronomu">
+          <svg class="i-play" viewBox="0 0 24 24"><path d="M7 4v16l13-8z"/></svg>
+          <svg class="i-stop" viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="1.5"/></svg>
+        </button>
+        <button id="forkBtn" class="mini-fork" title="Ton wzorcowy (kamerton)" aria-label="Ton wzorcowy">
+          <svg viewBox="0 0 32 32" aria-hidden="true"><path d="M13 4h2v11a1 1 0 0 0 2 0V4h2v11a3 3 0 0 1-2 2.8V28a1 1 0 0 1-2 0V17.8A3 3 0 0 1 13 15V4z"/><path d="M8.5 9.5a8 8 0 0 0 0 11l1.4-1.4a6 6 0 0 1 0-8.2zM5.6 6.6a12 12 0 0 0 0 16.8L7 22a10 10 0 0 1 0-14zM23.5 9.5l-1.4 1.4a6 6 0 0 1 0 8.2l1.4 1.4a8 8 0 0 0 0-11zM26.4 6.6 25 8a10 10 0 0 1 0 14l1.4 1.4a12 12 0 0 0 0-16.8z"/></svg>
+        </button>
+      </div>
+
+      <div id="forkPanel" class="fork-panel" hidden>
+        <button id="forkDown" class="round-btn" aria-label="Półton niżej">−</button>
+        <div class="fork-note">
+          <div id="forkNote" class="fork-name">A4</div>
+          <div id="forkInfo" class="fork-info">440.0 Hz</div>
+        </div>
+        <button id="forkUp" class="round-btn" aria-label="Półton wyżej">+</button>
+        <button id="forkPlay" class="fork-play">Graj</button>
+      </div>
+
+      <div class="card tuner-card">
+        <div class="tuner-head">
+          <button id="a4Label" class="a4-label" title="Strojenie A4">A4 = 440 Hz</button>
+          <span id="transpLabel" class="transp-label"></span>
+          <button id="tunerSettingsBtn" class="icon-btn" aria-label="Ustawienia stroika">
+            <svg viewBox="0 0 24 24"><path d="M19.4 13a7.7 7.7 0 0 0 0-2l2.1-1.6-2-3.5-2.5 1a7.4 7.4 0 0 0-1.7-1L15 3.3h-4l-.4 2.6a7.4 7.4 0 0 0-1.7 1l-2.5-1-2 3.5L6.6 11a7.7 7.7 0 0 0 0 2l-2.1 1.6 2 3.5 2.5-1a7.4 7.4 0 0 0 1.7 1l.4 2.6h4l.4-2.6a7.4 7.4 0 0 0 1.7-1l2.5 1 2-3.5zM13 15.5a3.5 3.5 0 1 1 0-7 3.5 3.5 0 0 1 0 7z" transform="translate(-1 0)"/></svg>
+          </button>
+        </div>
+
+        <div class="gauge-wrap">
+          <div id="targetLabel" class="target-label">—</div>
+          <svg id="gauge" class="gauge" viewBox="0 0 320 180" aria-hidden="true">
+            <g id="gaugeZone"></g>
+            <g id="gaugeTicks"></g>
+            <g id="needle" class="needle">
+              <line x1="160" y1="172" x2="160" y2="40"/>
+            </g>
+            <circle id="okDot" class="ok-dot" cx="160" cy="146" r="17"/>
+            <path id="okCheck" class="ok-check" d="M151 146l6 6 12-13"/>
+            <text id="lowName" class="end-name" x="22" y="176"></text>
+            <text id="highName" class="end-name" x="298" y="176" text-anchor="end"></text>
+          </svg>
+          <div id="centsBox" class="cents-box">—</div>
+          <div id="statusText" class="status-text"></div>
+        </div>
+
+        <div id="notePanel" class="note-panel">
+          <div class="note-labels">
+            <span>Koncertowo</span>
+            <span id="instLabel">E♭ instr.</span>
+          </div>
+          <div class="notes">
+            <span id="concertNote" class="note">–</span>
+            <span id="noteArrow" class="arrow">»</span>
+            <span id="instNote" class="note">–</span>
+          </div>
+          <div class="freq-line">
+            <span id="freqNow">— Hz</span>
+            <span id="freqDiff"></span>
+          </div>
+        </div>
+
+        <canvas id="history" class="history" height="150"></canvas>
+
+        <button id="micStart" class="mic-start">
+          <svg viewBox="0 0 24 24"><path d="M12 15a3 3 0 0 0 3-3V6a3 3 0 0 0-6 0v6a3 3 0 0 0 3 3zm5-3a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.9V22h2v-3.1a7 7 0 0 0 6-6.9z"/></svg>
+          <span>Włącz mikrofon</span>
+        </button>
+      </div>
+    </section>
+
+    <!-- ================= METRONOM ================= -->
+    <section id="metro" class="screen" role="tabpanel">
+      <div class="bpm-row">
+        <button id="bpmDown" class="step-btn" aria-label="Wolniej">−</button>
+        <button id="bpmUp" class="step-btn" aria-label="Szybciej">+</button>
+        <div class="bpm-display">
+          <span class="q">♩=</span>
+          <input id="bpmValue" class="bpm-value" type="number" inputmode="numeric" min="20" max="300" value="84" aria-label="Tempo BPM">
+          <span id="tempoName" class="tempo-name">Andante</span>
+        </div>
+        <button id="tapBtn" class="tap-btn" aria-label="Wystukaj tempo">
+          <svg viewBox="0 0 64 64" aria-hidden="true"><ellipse cx="30" cy="36" rx="20" ry="8"/><path d="M10 36v12c0 4.4 9 8 20 8s20-3.6 20-8V36c0 4.4-9 8-20 8s-20-3.6-20-8z" opacity=".85"/><path d="M36 30 58 10l2 2-20 21zM40 32l20-14 1.4 2.4-19 13z"/></svg>
+          <span>TAP</span>
+        </button>
+      </div>
+
+      <input id="bpmSlider" class="slider" type="range" min="20" max="300" value="84" aria-label="Tempo">
+
+      <div class="opt-row">
+        <div class="beats-stepper" title="Liczba uderzeń w takcie">
+          <span class="lbl">Metrum</span>
+          <button id="beatsDown" aria-label="Mniej uderzeń">−</button>
+          <span id="beatsVal">4</span>
+          <button id="beatsUp" aria-label="Więcej uderzeń">+</button>
+        </div>
+        <div class="seg" id="subdivSeg" role="radiogroup" aria-label="Podział">
+          <button data-sub="1" title="ćwierćnuty">♩</button>
+          <button data-sub="2" title="ósemki">♫</button>
+          <button data-sub="3" title="triole"><span class="tup">3</span>♫</button>
+          <button data-sub="4" title="szesnastki">♬</button>
+          <button data-sub="swing" title="swing">sw</button>
+          <button data-sub="5" title="kwintole"><span class="tup">5</span>♬</button>
+        </div>
+      </div>
+
+      <div id="beatDots" class="beat-dots" aria-label="Akcenty – dotknij aby zmienić"></div>
+      <div class="hint">Dotknij kropki: akcent → zwykłe → cisza</div>
+
+      <div class="opt-row">
+        <select id="soundSel" class="select" aria-label="Brzmienie"></select>
+        <div class="vol">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9v6h4l5 5V4L8 9H4zm12.5 3A4.5 4.5 0 0 0 14 8v8a4.5 4.5 0 0 0 2.5-4zM14 3.2v2.1a7 7 0 0 1 0 13.4v2.1a9 9 0 0 0 0-17.6z"/></svg>
+          <input id="volSlider" class="slider" type="range" min="0" max="100" value="80" aria-label="Głośność">
+        </div>
+      </div>
+
+      <button id="playArea" class="play-area" aria-label="Start / stop">
+        <div class="play-top">
+          <span class="clock">⏱ <span id="elapsed">0:00</span></span>
+          <span id="barCount" class="bar-count">takt 0</span>
+        </div>
+        <svg class="big-play i-play" viewBox="0 0 24 24"><path d="M7 4v16l13-8z"/></svg>
+        <svg class="big-play i-stop" viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="1.5"/></svg>
+        <div id="bigBeat" class="big-beat"></div>
+      </button>
+
+      <div class="toggles">
+        <button id="tglFlash" class="tgl" aria-pressed="true" title="Błysk ekranu">
+          <svg viewBox="0 0 24 24"><path d="M7 2h10l-1 5H8zM8 8h8l-2 4v9h-4v-9z"/></svg><span>Błysk</span>
+        </button>
+        <button id="tglVibe" class="tgl" aria-pressed="false" title="Wibracje">
+          <svg viewBox="0 0 24 24"><rect x="8" y="3" width="8" height="18" rx="1.5"/><path d="M5 7v10M3 9v6M19 7v10M21 9v6" stroke="currentColor" stroke-width="1.5" fill="none"/></svg><span>Wibracje</span>
+        </button>
+        <button id="tglTrainer" class="tgl" aria-pressed="false" title="Trener tempa">
+          <svg viewBox="0 0 24 24"><path d="M3 21h3v-5H3zm5 0h3v-8H8zm5 0h3V10h-3zm5 0h3V6h-3zM4 10l6-5 4 3 6-5" stroke="currentColor" stroke-width="1.5" fill="none"/></svg><span>Trener</span>
+        </button>
+        <button id="tglTimer" class="tgl" aria-pressed="false" title="Wyłącz po czasie">
+          <svg viewBox="0 0 24 24"><path d="M9 1h6v2H9zm3 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18zm1 9.4V8h-2v6.6l4 2.4 1-1.7z"/></svg><span>Minutnik</span>
+        </button>
+        <button id="tglAwake" class="tgl" aria-pressed="true" title="Nie wygaszaj ekranu">
+          <svg viewBox="0 0 24 24"><path d="M12 5C6 5 2 12 2 12s4 7 10 7 10-7 10-7-4-7-10-7zm0 11a4 4 0 1 1 0-8 4 4 0 0 1 0 8z"/></svg><span>Ekran</span>
+        </button>
+      </div>
+
+      <div id="trainerPanel" class="sub-panel" hidden>
+        <label>co <input id="trEvery" type="number" min="1" max="64" value="4"> takty</label>
+        <label>o <input id="trStep" type="number" min="1" max="50" value="2"> BPM</label>
+        <label>do <input id="trTarget" type="number" min="20" max="300" value="140"> BPM</label>
+      </div>
+      <div id="timerPanel" class="sub-panel" hidden>
+        <label>Zatrzymaj po <input id="tmMinutes" type="number" min="1" max="180" value="5"> min</label>
+      </div>
+    </section>
+  </main>
+
+  <!-- ================= USTAWIENIA STROIKA ================= -->
+  <dialog id="tunerSettings" class="dialog">
+    <form method="dialog">
+      <h2>Ustawienia stroika</h2>
+
+      <fieldset>
+        <legend>Nazwy dźwięków</legend>
+        <div class="radio-grid">
+          <div class="radio-col" id="namingRadios"></div>
+          <div class="radio-col">
+            <label class="radio"><input type="radio" name="accidental" value="sharp"><span>♯</span></label>
+            <label class="radio"><input type="radio" name="accidental" value="flat"><span>♭</span></label>
+          </div>
+        </div>
+      </fieldset>
+
+      <fieldset>
+        <legend>Transpozycja instrumentu</legend>
+        <select id="transpSel" class="select transp-sel"></select>
+        <div id="transpDesc" class="muted"></div>
+      </fieldset>
+
+      <fieldset>
+        <legend>Częstotliwość A4</legend>
+        <div class="a4-row">
+          <button type="button" id="a4Down" class="round-btn" aria-label="−1 Hz">−</button>
+          <div class="a4-input"><input id="a4Input" type="number" min="400" max="480" step="0.5" inputmode="decimal"> Hz</div>
+          <button type="button" id="a4Up" class="round-btn" aria-label="+1 Hz">+</button>
+        </div>
+        <button type="button" id="a4Reset" class="wide-btn">Reset: 440 Hz</button>
+      </fieldset>
+
+      <fieldset>
+        <legend>Zielona strefa: ±<span id="tolVal">5</span> centów</legend>
+        <input id="tolSlider" class="slider" type="range" min="1" max="20" value="5">
+        <legend class="mt">Czułość mikrofonu</legend>
+        <input id="sensSlider" class="slider" type="range" min="0" max="100" value="50">
+      </fieldset>
+
+      <button class="ok-btn" value="ok">OK</button>
+    </form>
+  </dialog>
+
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>
