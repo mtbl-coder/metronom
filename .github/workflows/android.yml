@@ -1,0 +1,55 @@
+name: Budowanie APK (Android)
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+      - run: npm ci
+      - run: npm test
+      - name: Projekt Android (Capacitor)
+        run: |
+          npm run build:web
+          npx cap add android
+          scripts/android-setup.sh "${{ github.run_number }}"
+          npx cap sync android
+      - name: Stały klucz podpisu (aktualizacje instalują się na poprzednią wersję)
+        run: |
+          mkdir -p ~/.android
+          cp android-signing/debug.keystore ~/.android/debug.keystore
+      - name: Budowanie APK
+        working-directory: android
+        run: ./gradlew assembleDebug --no-daemon
+      - name: Zmiana nazwy
+        run: cp android/app/build/outputs/apk/debug/app-debug.apk stroik.apk
+      - uses: actions/upload-artifact@v4
+        with:
+          name: stroik-apk
+          path: stroik.apk
+      - name: Publikacja w Releases
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v1.0.${{ github.run_number }}
+          name: Stroik 1.0.${{ github.run_number }}
+          target_commitish: ${{ github.sha }}
+          make_latest: true
+          files: stroik.apk
+          body: |
+            Plik **stroik.apk** – pobierz na telefonie z Androidem i zainstaluj
+            (przy pierwszej instalacji zezwól na instalację z tego źródła).

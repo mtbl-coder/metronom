@@ -1,5 +1,8 @@
 # Stroik i Metronom
 
+- **Aplikacja w przeglądarce (Android i iPhone):** https://mtbl-coder.github.io/metronom/
+- **Plik APK (Android):** https://github.com/mtbl-coder/metronom/releases/latest/download/stroik.apk
+
 Aplikacja na telefon (PWA – działa w przeglądarce, można ją zainstalować na ekranie głównym i używać offline) dla muzyków, szczególnie grających na instrumentach dętych.
 
 ## Stroik
@@ -40,6 +43,19 @@ npm test           # testy detekcji wysokości i nazewnictwa
 Mikrofon w przeglądarce działa tylko przez **HTTPS** (lub `localhost`). Najprościej opublikować przez GitHub Pages – workflow `.github/workflows/pages.yml` publikuje stronę po wypchnięciu na gałąź `main` (w ustawieniach repozytorium: *Settings → Pages → Source: GitHub Actions*).
 
 Na telefonie: otwórz adres strony w Chrome (Android) lub Safari (iOS) → menu → **Dodaj do ekranu głównego**. Aplikacja uruchamia się wtedy jak natywna i działa bez internetu.
+
+## APK (Android)
+
+Po każdym wypchnięciu na `main` workflow `.github/workflows/android.yml` pakuje aplikację w APK (Capacitor) i publikuje go w zakładce **Releases**. Projekt `android/` jest generowany w CI (`npx cap add android` + `scripts/android-setup.sh`), więc nie trzeba go trzymać w repozytorium.
+
+APK jest podpisany kluczem z `android-signing/debug.keystore` (klucz deweloperski, hasło `android`), dzięki czemu kolejne wersje instalują się jako aktualizacja. Do publikacji w Google Play trzeba użyć prywatnego klucza trzymanego w sekretach repozytorium.
+
+Lokalnie (wymaga Android SDK i Javy 21):
+
+```bash
+npm ci && npm run build:web && npx cap add android && scripts/android-setup.sh
+cd android && ./gradlew assembleDebug
+```
 
 ## Struktura
 
